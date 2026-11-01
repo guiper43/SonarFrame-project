@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../SonarFrame.Core/SonarFrame.Core.csproj" /></ItemGroup>
+</Project>
