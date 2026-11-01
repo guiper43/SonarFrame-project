@@ -4,7 +4,7 @@
 
 O **sonarFrame** é um projeto de editor de vídeo para Windows, pensado inicialmente para pessoas cegas e usuárias de leitores de tela. Seu objetivo é tornar tarefas comuns de edição audiovisual — importar, organizar, cortar, legendar, combinar áudios e exportar — possíveis de realizar com autonomia, sem depender do mouse ou de uma linha do tempo exclusivamente visual.
 
-> **Estado do projeto:** especificação funcional concluída para os requisitos RF01 a RF06 e para os fluxos de projetos e acessibilidade. **O software ainda está em desenvolvimento**; as funcionalidades descritas abaixo são requisitos aprovados, não uma indicação de que já estejam implementadas.
+> **Estado do projeto:** núcleo de edição e persistência implementado em C#/.NET 10, com testes e três pacotes NuGet locais. A interface WPF permite importar vídeos, fotos e áudios reais, selecionar múltiplas mídias e inseri-las explicitamente na composição. Reprodução, legendas e renderização ainda não estão implementadas. Consulte [o guia da interface](docs/desktop.md) para abrir a aplicação e [o guia do núcleo](docs/core.md) para compilar e testar. As funcionalidades de produto abaixo continuam sendo requisitos aprovados, não uma indicação de implementação completa.
 
 ## Princípios do produto
 

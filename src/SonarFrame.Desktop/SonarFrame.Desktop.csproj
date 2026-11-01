@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../SonarFrame.Infrastructure/SonarFrame.Infrastructure.csproj" /></ItemGroup>
+  <ItemGroup Condition="Exists('../../.tools/ffmpeg/ffprobe.exe')">
+    <Content Include="../../.tools/ffmpeg/ffprobe.exe" Link="tools/ffprobe.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../.tools/ffmpeg/LICENSE.txt" Link="tools/FFmpeg-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../.tools/ffmpeg/README.txt" Link="tools/FFmpeg-README.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../docs/media-tools.md" Link="tools/NOTICE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

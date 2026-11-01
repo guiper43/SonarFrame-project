@@ -1,0 +1,71 @@
+<Window x:Class="SonarFrame.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="sonarFrame" FontSize="16" Width="1180" Height="830" MinWidth="760" MinHeight="580" WindowStartupLocation="CenterScreen" PreviewKeyDown="WindowKeyDown" Closing="WindowClosing">
+ <DockPanel>
+  <Menu DockPanel.Dock="Top">
+   <MenuItem Header="_Projeto"><MenuItem Header="_Novo projeto" Click="NewProject"/><MenuItem Header="_Abrir projeto…" Click="OpenProject"/><MenuItem Header="_Salvar" InputGestureText="Ctrl+S" Click="SaveProject"/><Separator/><MenuItem Header="Tela _inicial" Click="GoHome"/><MenuItem Header="Sai_r" Click="Exit"/></MenuItem>
+   <MenuItem Header="A_juda"><MenuItem Header="_Atalhos de teclado" InputGestureText="F1" Click="Help"/></MenuItem>
+  </Menu>
+  <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="Gray" Padding="14,8">
+   <TextBlock x:Name="Status" Text="Bem-vindo ao sonarFrame." AutomationProperties.LiveSetting="Polite"/>
+  </Border>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+   <Grid Margin="24,12">
+    <StackPanel x:Name="Home" MaxWidth="720" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+     <TextBlock Text="sonarFrame" FontSize="42" FontWeight="SemiBold" Margin="0,18,0,8"/>
+     <TextBlock Text="Seu vídeo, no seu ritmo." FontSize="25" Margin="0,0,0,16"/>
+     <TextBlock Text="Crie um projeto, importe suas mídias e organize a composição pelo teclado. Reprodução e exportação chegarão nas próximas etapas." Margin="0,0,0,24"/>
+     <Button x:Name="NewButton" Content="_Novo projeto" Click="NewProject" HorizontalContentAlignment="Left"/>
+     <Button Content="_Meus projetos" Click="MyProjects" HorizontalContentAlignment="Left"/>
+     <Button Content="_Abrir projeto existente…" Click="OpenProject" HorizontalContentAlignment="Left"/>
+     <Button Content="_Configurações" Click="Settings" HorizontalContentAlignment="Left"/>
+     <Separator Margin="0,16"/>
+     <Button Content="Explorar projeto de _demonstração" Click="Demo" HorizontalContentAlignment="Left"/>
+     <TextBlock Text="A demonstração contém itens fictícios para experimentar listas, propriedades e organização. Nenhum arquivo pessoal será importado." Margin="0,8,0,16"/>
+     <TextBlock Text="Tab: próximo controle · Shift+Tab: anterior · F1: ajuda"/>
+    </StackPanel>
+    <StackPanel x:Name="Editor" Visibility="Collapsed">
+     <TextBlock x:Name="ProjectTitle" FontSize="28" FontWeight="SemiBold"/>
+     <TextBlock Text="Alt+1 a Alt+5: ir para uma região · F6: próxima região · F1: atalhos" Margin="0,6,0,12"/>
+     <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <GroupBox x:Name="LibraryRegion" Header="1 · Biblioteca de mídias" AutomationProperties.Name="Biblioteca de mídias, região 1">
+       <StackPanel><Button x:Name="AddButton" Content="_Adicionar…" Click="AddMedia" AutomationProperties.HelpText="Abre as guias de tipos de mídia"/>
+        <ListBox x:Name="Library" Height="135" SelectionMode="Extended" AutomationProperties.Name="Mídias importadas" AutomationProperties.HelpText="Use Control e Shift com as setas ou espaço para selecionar vários arquivos." DisplayMemberPath="Label" SelectionChanged="LibrarySelected"/>
+        <TextBlock x:Name="LibraryEmpty" Text="Sua biblioteca está vazia." Margin="0,6"/>
+        <Button x:Name="InsertButton" Content="Adicionar à linha do tempo" Click="Insert" IsEnabled="False"/>
+       </StackPanel>
+      </GroupBox>
+      <GroupBox x:Name="PropertiesRegion" Grid.Column="1" Header="2 · Propriedades do elemento">
+       <StackPanel><TextBox x:Name="Properties" IsReadOnly="True" BorderThickness="0" TextWrapping="Wrap" MinHeight="100" AutomationProperties.Name="Propriedades do elemento selecionado" Text="Selecione um conteúdo na biblioteca ou na linha do tempo."/>
+        <TextBlock Text="Selecionar um conteúdo não inicia a reprodução." Margin="0,8"/>
+       </StackPanel>
+      </GroupBox>
+     </Grid>
+     <GroupBox x:Name="TimelineRegion" Header="3 · Linha do tempo">
+      <StackPanel>
+       <Button x:Name="TimeNavigator" Content="Posição: 00:00:00.000" HorizontalContentAlignment="Left" PreviewKeyDown="TimeKeyDown" Click="ReadPosition" AutomationProperties.Name="Navegação temporal" AutomationProperties.HelpText="Setas: um quadro. Control e setas: um segundo. Page Up ou Down: dez segundos. Shift seleciona. Home e End: extremos."/>
+       <ListBox x:Name="Timeline" Height="115" DisplayMemberPath="Label" AutomationProperties.Name="Conteúdos da composição" SelectionChanged="TimelineSelected">
+        <ListBox.ContextMenu><ContextMenu><MenuItem Header="Mover para o início" Click="MoveFirst"/><MenuItem Header="Mover para antes" Click="MoveBefore"/><MenuItem Header="Mover para depois" Click="MoveAfter"/><MenuItem Header="Mover para o fim" Click="MoveLast"/></ContextMenu></ListBox.ContextMenu>
+       </ListBox>
+       <TextBlock x:Name="TimelineEmpty" Text="A composição está vazia. Adicione um item da biblioteca." Margin="0,6"/>
+       <WrapPanel><Button Content="Mover para antes" Click="MoveBefore"/><Button Content="Mover para depois" Click="MoveAfter"/><Button x:Name="UndoButton" Content="Desfazer" Click="Undo"/><Button x:Name="RedoButton" Content="Refazer" Click="Redo"/></WrapPanel>
+      </StackPanel>
+     </GroupBox>
+     <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <GroupBox x:Name="PreviewRegion" Header="4 · Prévia e reprodução"><StackPanel>
+       <TextBlock Text="A reprodução de áudio e vídeo ainda não está disponível." Margin="0,0,0,8"/>
+       <Button x:Name="PreviewButton" Content="Sobre a prévia" Click="PreviewInfo"/>
+      </StackPanel></GroupBox>
+      <GroupBox x:Name="CommandsRegion" Grid.Column="1" Header="5 · Comandos do projeto"><WrapPanel>
+       <Button x:Name="SaveButton" Content="Salvar projeto" Click="SaveProject" AutomationProperties.HelpText="Control S"/>
+       <Button Content="Sobre a exportação" Click="ExportInfo"/>
+       <Button Content="Tela inicial" Click="GoHome"/>
+      </WrapPanel></GroupBox>
+     </Grid>
+     <Expander Header="Mensagens recentes" Margin="6" IsExpanded="False"><ListBox x:Name="Messages" Height="100" AutomationProperties.Name="Mensagens recentes"/></Expander>
+    </StackPanel>
+   </Grid>
+  </ScrollViewer>
+ </DockPanel>
+</Window>

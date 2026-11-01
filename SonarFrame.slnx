@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/SonarFrame.Demo/SonarFrame.Demo.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/SonarFrame.Application/SonarFrame.Application.csproj" />
+    <Project Path="src/SonarFrame.Core/SonarFrame.Core.csproj" />
+    <Project Path="src/SonarFrame.Desktop/SonarFrame.Desktop.csproj" />
+    <Project Path="src/SonarFrame.Infrastructure/SonarFrame.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SonarFrame.Tests/SonarFrame.Tests.csproj" />
+  </Folder>
+</Solution>
