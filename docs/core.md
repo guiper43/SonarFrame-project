@@ -5,8 +5,8 @@ O núcleo implementa edição não destrutiva e persistência; ainda não é um 
 ## Pacotes e dependências
 
 - `SonarFrame.Core`: projeto imutável, biblioteca, composição, tempo racional e comandos de edição. Sem dependências de processamento de mídia ou banco.
-- `SonarFrame.Application`: `EditorSession`, histórico, seleção temporal, notificações, importação por contrato, salvamento e recuperação.
-- `SonarFrame.Infrastructure`: `SqliteProjectStore`, com Microsoft.Data.Sqlite e biblioteca SQLite nativa.
+- `SonarFrame.Application`: `SessaoEdicao`, `AcoesEdicao`, histórico, seleção temporal, notificações, importação por contrato, salvamento e recuperação.
+- `SonarFrame.Infrastructure`: `RepositorioProjetosSqlite`, `LeitorMetadadosFfprobe`, catálogo de projetos e armazenamento de preferências.
 
 A infraestrutura depende da aplicação; a aplicação depende do domínio. A interface WPF cria e conecta esses componentes. Prévia, FFmpeg e exportação implementarão os contratos da aplicação e receberão snapshots imutáveis. Credenciais de IA não fazem parte do modelo persistido.
 
@@ -37,34 +37,36 @@ Para consumir os pacotes, adicione `artifacts/packages` como fonte NuGet local e
 ## Uso da sessão
 
 ```csharp
-var session = new EditorSession(Project.Create("Meu vídeo"));
-session.Execute(new RegisterMedia(asset)); // Metadados obtidos por IMediaProbe.
-session.Execute(new InsertClip(asset.Id, 0));
-session.Execute(new SplitClip(session.Current.Timeline[0].Id, MediaTime.Seconds(4)));
-session.Undo();
-session.Redo();
+var sessao = new SessaoEdicao(Projeto.Criar("Meu vídeo"));
+sessao.Executar(new RegistrarMidia(midia));
+sessao.Executar(new InserirClipe(midia.Id, 0));
+sessao.Executar(new DividirClipe(sessao.Atual.LinhaDoTempo[0].Id, TempoMidia.Segundos(4)));
+sessao.Desfazer();
+sessao.Refazer();
 
-var persistence = new ProjectPersistence(session, new SqliteProjectStore(), projectPath);
-await persistence.SaveAsync();
+var persistencia = new PersistenciaProjeto(sessao, new RepositorioProjetosSqlite(), caminhoProjeto);
+await persistencia.SalvarAsync();
 ```
 
 Cada comando produz um novo projeto validado antes de entrar no histórico. Uma falha preserva estado e histórico e gera uma mensagem consultável. Depois de desfazer, uma nova edição elimina o caminho de refazer. Snapshots compartilham coleções imutáveis; o histórico fica apenas na memória e não tem limite configurável nesta versão.
 
-`Current`, cursor, intervalo selecionado e item selecionado são conceitos distintos. O foco de teclado pertence à interface. `Seek`, `MoveBy` e `StepFrame` não adicionam entradas ao histórico de edição. A posição da sessão é persistida, portanto mudanças de navegação também podem deixar o projeto pendente de salvamento. `Seek(..., playback: true)` atualiza o cursor sem emitir anúncios. Selecionar um item não reproduz nem desloca o cursor.
+`Atual`, cursor, intervalo selecionado e item selecionado são conceitos distintos. O foco de teclado pertence à interface. `Posicionar`, `Deslocar` e `AvancarQuadro` não adicionam entradas ao histórico de edição. A posição da sessão é persistida, portanto mudanças de navegação também podem deixar o projeto pendente de salvamento. `Posicionar(..., reproducao: true)` atualiza o cursor sem emitir anúncios. Selecionar um item não reproduz nem desloca o cursor.
 
-`Changed` comunica resultados na thread que executou a operação. O adaptador WPF deve usar seu Dispatcher para atualizar controles e UI Automation. Há até 100 mensagens recentes. Falhas em observadores não invalidam uma edição já confirmada. A sessão serializa commits; o aplicativo deve coordenar comandos de navegação e reprodução para não disputar o cursor.
+`Alterado` comunica resultados na thread que executou a operação. O adaptador WPF deve usar seu Dispatcher para atualizar controles e UI Automation. Há até 100 mensagens recentes. Falhas em observadores não invalidam uma edição já confirmada. A sessão serializa commits; o aplicativo deve coordenar comandos de navegação e reprodução para não disputar o cursor.
 
 ## Semântica de tempo e edição
 
-- `MediaTime` representa segundos como uma fração reduzida de inteiros de 64 bits; operações intermediárias usam BigInteger e rejeitam overflow. Não usa ponto flutuante para cortes. A formatação em milissegundos é apenas para apresentação.
+- `TempoMidia` representa segundos como uma fração reduzida de inteiros de 64 bits; operações intermediárias usam BigInteger e rejeitam overflow. Não usa ponto flutuante para cortes. A formatação em milissegundos é apenas para apresentação.
 - Intervalos são semiabertos: início incluído e fim excluído. A sequência principal é contígua e sua duração resulta da soma dos clipes.
 - Cada clipe tem ID próprio, ID da mídia, início na origem e duração. Divisão e corte preservam os arquivos originais e o vínculo audiovisual representado pelo clipe.
-- Navegação CFR usa limites de quadros na origem, inclusive depois de deslocamentos por segundos. Para VFR ou mídia sem taxa de quadros, `IFrameNavigator` é obrigatório; sua implementação real deve consultar timestamps da mídia.
-- `DeleteRange` remove o intervalo da composição inteira. Camadas que cruzam o corte são recortadas/divididas; camadas posteriores recuam. O cursor fica no início do corte ou no novo fim quando se remove a cauda. Remover toda a composição é permitido.
-- `MoveClip` usa posição final com índice iniciado em zero. Reordenar ou inserir na sequência mantém camadas independentes em seus tempos absolutos. Não existe associação implícita entre uma camada e um clipe principal.
+- Navegação CFR usa limites de quadros na origem, inclusive depois de deslocamentos por segundos. Para VFR ou mídia sem taxa de quadros, `INavegadorQuadros` é obrigatório; sua implementação real deve consultar timestamps da mídia.
+- `ExcluirIntervalo` remove o intervalo da composição inteira. Camadas que cruzam o corte são recortadas/divididas; camadas posteriores recuam. O cursor fica no início do corte ou no novo fim quando se remove a cauda. Remover toda a composição é permitido.
+- `MoverClipe` usa posição final com índice iniciado em zero. Reordenar ou inserir na sequência mantém camadas independentes em seus tempos absolutos. Não existe associação implícita entre uma camada e um clipe principal.
 - Camadas devem estar inteiramente dentro da duração da sequência. Imagens sem duração de origem exigem duração explícita na inserção. Volume aceita 0 a 200 e não altera duração.
+- `AtualizarCamada` altera início, recorte de origem e duração da camada. `RemoverCamada` remove apenas a camada. Ambas preservam a duração da sequência principal.
+- `InserirClipes` aceita uma posição opcional de inserção e executa a seleção múltipla como uma única entrada de histórico.
 
-Essas regras de camadas concretizam a proposta aprovada para o núcleo. Elas não definem ainda composição de transições, empilhamento visual ou renderização.
+As regras de camadas representam a composição temporal. Transições, empilhamento visual e renderização não fazem parte da versão 0.1.0.
 
 ## SQLite e recuperação
 
@@ -72,18 +74,18 @@ O arquivo sugerido é `.sonarframe`; a validação depende do conteúdo, não da
 
 A versão inicial usa um snapshot JSON transacional para manter a alteração inteira atômica e evitar um esquema relacional prematuro. Versões desconhecidas são rejeitadas, inclusive ao salvar; migrações futuras deverão ser explícitas. Novos arquivos são gravados em arquivo temporário adjacente e movidos para o destino após commit. Atualizações existentes usam transações SQLite. A infraestrutura executa o trabalho de disco em uma thread de trabalho, pois as APIs async do provedor SQLite executam sincronamente.
 
-Crie um `ProjectPersistence` por sessão. Inicie `RunAutoSaveAsync` com token cancelável para verificar a cada dois minutos. `AutoSaveIfDueAsync` permite integração com outro agendador ou testes. Sem alterações, não há gravação. Ao salvar, um snapshot é capturado; edições que ocorram durante a gravação continuam pendentes.
+Crie um `PersistenciaProjeto` por sessão. Inicie `ExecutarSalvamentoAutomaticoAsync` com token cancelável para verificar a cada dois minutos. `SalvarAutomaticamenteSeNecessarioAsync` permite integração com outro agendador ou testes. Sem alterações, não há gravação. Ao salvar, um snapshot é capturado; edições que ocorram durante a gravação continuam pendentes.
 
-O salvamento grava primeiro `<projeto>.recovery`, depois o projeto principal. A recuperação representa o último snapshot gravado de uma sessão que ainda não foi encerrada normalmente. Na próxima abertura, `GetRecoveryAsync` devolve o candidato; a interface deve oferecer aceitar ou descartar, nunca aplicar silenciosamente. Para aceitar, crie uma sessão com o projeto recuperado e salve-a. Para descartar, remova a recuperação pelo fechamento explícito da sessão correspondente. A primeira recuperação só existe após o primeiro salvamento; alterações posteriores ao último salvamento podem ser perdidas numa falha.
+O salvamento grava primeiro `<projeto>.recovery`, depois o projeto principal. A recuperação representa o último snapshot gravado de uma sessão que ainda não foi encerrada normalmente. Na próxima abertura, `ObterRecuperacaoAsync` devolve o candidato; a interface deve oferecer aceitar ou descartar, nunca aplicar silenciosamente. Para aceitar, crie uma sessão com o projeto recuperado e salve-a. Para descartar, remova a recuperação pelo fechamento explícito da sessão correspondente. A primeira recuperação só existe após o primeiro salvamento; alterações posteriores ao último salvamento podem ser perdidas numa falha.
 
-Antes de `CloseAsync`, cancele e aguarde o loop de autosave. O fechamento exige salvar alterações ou informar descarte explícito e remove o arquivo de recuperação. Não há garantia de recuperação de alterações que ainda existiam apenas na memória nem de durabilidade diante de falhas físicas do dispositivo.
+Antes de `FecharAsync`, cancele e aguarde o loop de salvamento automático. O fechamento exige salvar alterações ou informar descarte explícito e remove o arquivo de recuperação. Não há garantia de recuperação de alterações que ainda existiam apenas na memória nem de durabilidade diante de falhas físicas do dispositivo.
 
-`MediaImport.FindMissing` lista referências ausentes; `RelinkMedia` atualiza o caminho mantendo a montagem. O aplicativo deve validar os metadados de uma nova mídia com seu probe antes de confirmar a substituição. A importação em lote preserva os itens válidos quando outro falha.
+`ImportacaoMidias.EncontrarAusentes` lista referências ausentes; `ReligarMidia` atualiza o caminho mantendo a montagem. `AcoesEdicao.ReligarAsync` valida tipo, duração e taxa de quadros com o leitor de metadados antes de executar a substituição. A importação em lote preserva os itens válidos quando outro falha.
 
 ## Cobertura e limites
 
-Os testes cobrem biblioteca separada da composição (RF01), montagem e histórico (RF02), volume/camadas no modelo (parte de RF03), tempo e seleção (parte de RF05), persistência/autosave/recuperação (parte de GP), e mensagens/estados separados para a interface (base de RNF01).
+Os testes cobrem biblioteca separada da composição (RF01), montagem e histórico (RF02), volume/camadas no modelo (parte de RF03), tempo e seleção (parte de RF05), persistência/salvamento automático/recuperação (parte de GP), e mensagens/estados separados para a interface (base de RNF01).
 
-Uma interface WPF com importação real via `FfprobeMediaProbe` está disponível; consulte [o guia da interface](desktop.md). `MediaImport` suporta cancelamento com resultados parciais e progresso por arquivo; `InsertClips` permite inserção múltipla atômica. Permanecem pendentes: validação completa com NVDA, reprodução, renderização/exportação, legendas, transições, IA, catálogo visual de projetos e instalador. A leitura de metadados não comprova decodificação completa dos arquivos, sincronização audiovisual ou precisão VFR. RF07 permanece reservado.
+A interface WPF conecta as operações de montagem e o ciclo de persistência; a correspondência está em [release.md](release.md). `ImportacaoMidias` suporta cancelamento com resultados parciais e progresso por arquivo. Permanecem pendentes: validação completa com NVDA, reprodução, renderização/exportação, legendas, transições, IA e instalador. A leitura de metadados não comprova decodificação completa dos arquivos, sincronização audiovisual ou precisão VFR. RF07 permanece reservado.
 
 Referências técnicas: [instalação do .NET](https://learn.microsoft.com/dotnet/core/install/windows), [transações SQLite](https://learn.microsoft.com/dotnet/standard/data/sqlite/transactions), [limitações async do provedor](https://learn.microsoft.com/dotnet/standard/data/sqlite/async).
