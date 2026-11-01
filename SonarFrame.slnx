@@ -9,6 +9,7 @@
     <Project Path="src/SonarFrame.Infrastructure/SonarFrame.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SonarFrame.Desktop.Tests/SonarFrame.Desktop.Tests.csproj" />
     <Project Path="tests/SonarFrame.Tests/SonarFrame.Tests.csproj" />
   </Folder>
 </Solution>
