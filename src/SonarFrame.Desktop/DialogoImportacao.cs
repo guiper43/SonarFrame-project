@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using SonarFrame.Application;
 
@@ -16,6 +18,8 @@ public sealed class DialogoImportacao : Window
     private readonly Button fechar = new() { Content = "Fechar", IsCancel = true };
     private CancellationTokenSource? cancelamento;
     private bool executando;
+    private bool conteudoExibido;
+    private bool focoInicialAplicado;
     public bool ImportouAlgumaMidia { get; private set; }
 
     public DialogoImportacao(Window proprietario, SessaoEdicao sessao, ILeitorMetadadosMidia leitorMetadados)
@@ -23,6 +27,27 @@ public sealed class DialogoImportacao : Window
         Owner = proprietario; Title = "Adicionar conteúdo"; Width = 620; SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ResizeMode = ResizeMode.NoResize; FontSize = 16;
         var painel = new StackPanel { Margin = new Thickness(24) };
+        painel.Children.Add(new TextBlock { Text = "Selecione o tipo da importação", Margin = new Thickness(0, 0, 0, 8) });
+        AutomationProperties.SetName(guias, "Selecione o tipo da importação");
+        AutomationProperties.SetHelpText(guias, "Use as setas para selecionar o tipo. Tab acessa Selecionar arquivos.");
+        guias.PreviewKeyDown += (_, e) =>
+        {
+            if (e.OriginalSource is not TabItem || Keyboard.Modifiers != ModifierKeys.None) return;
+            if (e.Key is Key.Up or Key.Left or Key.Down or Key.Right)
+            {
+                var direcao = e.Key is Key.Up or Key.Left ? -1 : 1;
+                guias.SelectedIndex = (guias.SelectedIndex + direcao + guias.Items.Count) % guias.Items.Count;
+                FocarGuiaSelecionada();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Tab)
+            {
+                guias.UpdateLayout();
+                var conteudo = (StackPanel)((TabItem)guias.SelectedItem).Content;
+                (conteudo.Children.OfType<Button>().FirstOrDefault() ?? fechar).Focus();
+                e.Handled = true;
+            }
+        };
         foreach (var (nome, descricao, filtro) in new[]
         {
             ("Fotos e vídeos", "Selecione fotos JPG/PNG ou vídeos MP4/MOV. Você pode selecionar vários arquivos.", "Fotos e vídeos|*.jpg;*.jpeg;*.png;*.mp4;*.mov"),
@@ -39,38 +64,13 @@ public sealed class DialogoImportacao : Window
                 {
                     var dialogo = new OpenFileDialog { Multiselect = true, Filter = filtro, Title = nome, CheckFileExists = true };
                     if (dialogo.ShowDialog(this) != true) { escolher.Focus(); return; }
-                    executando = true; guias.IsEnabled = false; fechar.Content = "Cancelar importação";
-                    cancelamento = new CancellationTokenSource();
-                    fechar.Focus();
-                    resultados.Items.Clear();
-                    Informar("Importação iniciada. Os arquivos serão adicionados somente à biblioteca.");
-                    var progresso = new Progress<ProgressoImportacao>(p =>
-                    {
-                        if (!executando) return;
-                        barraProgresso.Value = p.Total == 0 ? 0 : p.Concluidos * 100.0 / p.Total;
-
-                        AutomationProperties.SetName(barraProgresso, $"Importação: {p.Concluidos} de {p.Total} arquivos");
-                        situacao.Text = $"{p.Concluidos} de {p.Total} arquivos. {p.ArquivoAtual}";
-                    });
-                    try
-                    {
-                        var resultado = await ImportacaoMidias.ImportarAsync(sessao, leitorMetadados, dialogo.FileNames, cancelamento.Token, progresso);
-                        ImportouAlgumaMidia |= resultado.MidiasImportadasIds.Count > 0;
-                        foreach (var falha in resultado.Falhas) resultados.Items.Add($"{System.IO.Path.GetFileName(falha.Caminho)}: {falha.Mensagem}");
-                        foreach (var id in resultado.MidiasImportadasIds) resultados.Items.Add($"Importado: {sessao.Atual.Biblioteca.Single(a => a.Id == id).Nome}");
-                        if (!resultado.FoiCancelado) barraProgresso.Value = 100;
-                        Informar($"{(resultado.FoiCancelado ? "Importação cancelada" : "Importação concluída")}. {resultado.MidiasImportadasIds.Count} arquivo(s) importado(s), {resultado.Falhas.Count} falha(s). Os itens importados permanecem na biblioteca.");
-                    }
-                    catch (Exception ex) { Informar("Não foi possível concluir a importação: " + ex.Message); }
-                    finally
-                    {
-                        executando = false; cancelamento.Dispose(); cancelamento = null;
-                        guias.IsEnabled = true; fechar.Content = "Fechar";
-                    }
+                    await ImportarArquivosAsync(sessao, leitorMetadados, dialogo.FileNames);
                 };
                 conteudo.Children.Add(escolher);
             }
-            guias.Items.Add(new TabItem { Header = nome, Content = conteudo });
+            var guia = new TabItem { Header = nome, Content = conteudo };
+            AutomationProperties.SetName(guia, $"Selecione o tipo da importação: {nome}");
+            guias.Items.Add(guia);
         }
         painel.Children.Add(guias); painel.Children.Add(situacao); painel.Children.Add(barraProgresso);
         painel.Children.Add(new TextBlock { Text = "Resultados da importação", Margin = new Thickness(0, 4, 0, 6) });
@@ -85,6 +85,56 @@ public sealed class DialogoImportacao : Window
             e.Cancel = true; cancelamento?.Cancel(); Informar("Cancelando. Os arquivos já importados serão preservados.");
         };
         Loaded += (_, _) => ((TabItem)guias.Items[0]).Focus();
+        ContentRendered += (_, _) => { conteudoExibido = true; AgendarFocoInicial(); };
+        Activated += (_, _) => AgendarFocoInicial();
+    }
+    private void AgendarFocoInicial()
+    {
+        if (!conteudoExibido || focoInicialAplicado) return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (!IsActive || focoInicialAplicado || executando) return;
+            FocarGuiaSelecionada();
+            focoInicialAplicado = ((TabItem)guias.SelectedItem).IsKeyboardFocused;
+        }));
+    }
+    private void FocarGuiaSelecionada()
+    {
+        guias.UpdateLayout();
+        var guia = (TabItem)guias.SelectedItem;
+        guia.Focus();
+        if (IsActive) Keyboard.Focus(guia);
+    }
+    internal async Task ImportarArquivosAsync(SessaoEdicao sessao, ILeitorMetadadosMidia leitorMetadados, string[] caminhos)
+    {
+        executando = true; guias.IsEnabled = false; fechar.Content = "Cancelar importação";
+        cancelamento = new CancellationTokenSource();
+        fechar.Focus();
+        resultados.Items.Clear();
+        Informar("Importação iniciada. Os arquivos serão adicionados somente à biblioteca.");
+        var progresso = new Progress<ProgressoImportacao>(p =>
+        {
+            if (!executando) return;
+            barraProgresso.Value = p.Total == 0 ? 0 : p.Concluidos * 100.0 / p.Total;
+
+            AutomationProperties.SetName(barraProgresso, $"Importação: {p.Concluidos} de {p.Total} arquivos");
+            situacao.Text = $"{p.Concluidos} de {p.Total} arquivos. {p.ArquivoAtual}";
+        });
+        try
+        {
+            var resultado = await ImportacaoMidias.ImportarAsync(sessao, leitorMetadados, caminhos, cancelamento.Token, progresso);
+            ImportouAlgumaMidia |= resultado.MidiasImportadasIds.Count > 0;
+            foreach (var falha in resultado.Falhas) resultados.Items.Add($"{System.IO.Path.GetFileName(falha.Caminho)}: {falha.Mensagem}");
+            foreach (var id in resultado.MidiasImportadasIds) resultados.Items.Add($"Importado: {sessao.Atual.Biblioteca.Single(a => a.Id == id).Nome}");
+            if (!resultado.FoiCancelado) barraProgresso.Value = 100;
+            Informar($"{(resultado.FoiCancelado ? "Importação cancelada" : "Importação concluída")}. {resultado.MidiasImportadasIds.Count} arquivo(s) importado(s), {resultado.Falhas.Count} falha(s). Os itens importados permanecem na biblioteca.");
+        }
+        catch (Exception ex) { Informar("Não foi possível concluir a importação: " + ex.Message); }
+        finally
+        {
+            executando = false; cancelamento.Dispose(); cancelamento = null;
+            guias.IsEnabled = true; fechar.Content = "Fechar"; fechar.Focus();
+        }
     }
     private void Informar(string mensagem)
     {
