@@ -6,9 +6,9 @@ O núcleo implementa edição não destrutiva e persistência; ainda não é um 
 
 - `SonarFrame.Core`: projeto imutável, biblioteca, composição, tempo racional e comandos de edição. Sem dependências de processamento de mídia ou banco.
 - `SonarFrame.Application`: `SessaoEdicao`, `AcoesEdicao`, histórico, seleção temporal, notificações, importação por contrato, salvamento e recuperação.
-- `SonarFrame.Infrastructure`: `RepositorioProjetosSqlite`, `LeitorMetadadosFfprobe`, catálogo de projetos e armazenamento de preferências.
+- `SonarFrame.Infrastructure`: `RepositorioProjetosSqlite`, `LeitorMetadadosFfprobe`, `PreparadorComposicaoFfmpeg`, catálogo de projetos e armazenamento de preferências.
 
-A infraestrutura depende da aplicação; a aplicação depende do domínio. A interface WPF cria e conecta esses componentes. Prévia, FFmpeg e exportação implementarão os contratos da aplicação e receberão snapshots imutáveis. Credenciais de IA não fazem parte do modelo persistido.
+A infraestrutura depende da aplicação; a aplicação depende do domínio. A interface WPF cria e conecta esses componentes. Na versão em desenvolvimento, `PreviaBiblioteca` coordena `IFabricaReprodutorMidia` e `IReprodutorMidia`, sem tipos WPF/LibVLC nem dependência de `SessaoEdicao`, e `IPreparadorComposicao` prepara a prévia temporária da sequência principal. O adaptador nativo de reprodução fica no Desktop. `IExportador` permanece reservado à exportação, ainda sem implementação. Credenciais de IA não fazem parte do modelo persistido.
 
 ## Compilar, testar e gerar pacotes
 
@@ -18,21 +18,21 @@ Instale um SDK .NET 10 (ou utilize um SDK local em `.tools/dotnet`, ignorado pel
 ./build.ps1 -Pack
 ```
 
-O script executa testes em Release e gera três arquivos `.nupkg` em `artifacts/packages`. Nenhum pacote é publicado em serviço externo. Os caches ficam em `.tools`; os arquivos `packages.lock.json` registram as dependências resolvidas.
+O script executa testes em Release e gera três arquivos `.nupkg` em `.tools/packages`. Nenhum pacote é publicado em serviço externo. Os caches ficam em `.tools`; os arquivos `packages.lock.json` registram as dependências resolvidas.
 
 Com um SDK no PATH, também é possível executar:
 
 ```powershell
 dotnet restore SonarFrame.slnx --locked-mode
 dotnet test SonarFrame.slnx -c Release -m:1
-dotnet pack SonarFrame.slnx -c Release --no-build -o artifacts/packages -m:1
+dotnet pack SonarFrame.slnx -c Release --no-build -o .tools/packages -m:1
 dotnet run --project samples/SonarFrame.Demo -- create artifacts/exemplo.sonarframe
 dotnet run --project samples/SonarFrame.Demo -- inspect artifacts/exemplo.sonarframe
 ```
 
 O exemplo usa metadados fictícios, não lê nem renderiza vídeos. `create` exige um arquivo de destino novo. A opção `simulate-crash` é uma ferramenta de teste: abre o projeto, inicia uma alteração SQLite e encerra o processo com código 73 sem commit. Uma abertura posterior deve recuperar o último estado confirmado.
 
-Para consumir os pacotes, adicione `artifacts/packages` como fonte NuGet local e referencie `SonarFrame.Infrastructure` versão `0.1.0`; as dependências SonarFrame.Application e SonarFrame.Core serão resolvidas dessa mesma pasta. Mantenha nuget.org habilitado para as dependências de terceiros. Também é possível usar referências diretas aos projetos.
+Para consumir os pacotes, adicione `.tools/packages` como fonte NuGet local e referencie `SonarFrame.Infrastructure` versão `0.1.0`; as dependências SonarFrame.Application e SonarFrame.Core serão resolvidas dessa mesma pasta. Mantenha nuget.org habilitado para as dependências de terceiros. Também é possível usar referências diretas aos projetos.
 
 ## Uso da sessão
 
@@ -86,6 +86,6 @@ Antes de `FecharAsync`, cancele e aguarde o loop de salvamento automático. O fe
 
 Os testes cobrem biblioteca separada da composição (RF01), montagem e histórico (RF02), volume/camadas no modelo (parte de RF03), tempo e seleção (parte de RF05), persistência/salvamento automático/recuperação (parte de GP), e mensagens/estados separados para a interface (base de RNF01).
 
-A interface WPF conecta as operações de montagem e o ciclo de persistência; a correspondência está em [release.md](release.md). `ImportacaoMidias` suporta cancelamento com resultados parciais e progresso por arquivo. Permanecem pendentes: validação completa com NVDA, reprodução, renderização/exportação, legendas, transições, IA e instalador. A leitura de metadados não comprova decodificação completa dos arquivos, sincronização audiovisual ou precisão VFR. RF07 permanece reservado.
+A interface WPF conecta as operações de montagem e o ciclo de persistência; a correspondência da versão 0.1.0 está em [release.md](release.md). `ImportacaoMidias` suporta cancelamento com resultados parciais e progresso por arquivo. A versão em desenvolvimento acrescenta prévia da biblioteca e reprodução da sequência principal com estado/posição próprios, preparação local cancelável e operações serializadas; novas aberturas cancelam as anteriores e eventos de gerações antigas são ignorados. Permanecem pendentes: validação completa com NVDA no editor, reprodução com camadas, exportação final, legendas, transições, IA e instalador. A leitura de metadados não comprova decodificação completa dos arquivos, sincronização audiovisual ou precisão VFR. RF07 permanece reservado.
 
 Referências técnicas: [instalação do .NET](https://learn.microsoft.com/dotnet/core/install/windows), [transações SQLite](https://learn.microsoft.com/dotnet/standard/data/sqlite/transactions), [limitações async do provedor](https://learn.microsoft.com/dotnet/standard/data/sqlite/async).

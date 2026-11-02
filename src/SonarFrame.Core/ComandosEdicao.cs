@@ -8,6 +8,17 @@ public sealed record RegistrarMidia(Midia Midia) : IComandoEdicao
 {
     public Projeto Aplicar(Projeto p) => p with { Biblioteca = p.Biblioteca.Add(Midia) };
 }
+public sealed record RemoverMidias(ImmutableArray<Guid> MidiasIds) : IComandoEdicao
+{
+    public Projeto Aplicar(Projeto p)
+    {
+        var ids = MidiasIds.ToHashSet();
+        if (ids.Any(id => !p.Biblioteca.Any(m => m.Id == id))) throw new ArgumentException("Mídia não encontrada.");
+        if (p.LinhaDoTempo.Concat(p.Camadas.Select(c => c.Clipe)).Any(c => ids.Contains(c.MidiaId)))
+            throw new InvalidOperationException("Há mídias selecionadas em uso na composição. Remova os clipes ou camadas correspondentes antes de removê-las da biblioteca.");
+        return ids.Count == 0 ? p : p with { Biblioteca = p.Biblioteca.Where(m => !ids.Contains(m.Id)).ToImmutableArray() };
+    }
+}
 public sealed record ReligarMidia(Guid MidiaId, string Caminho) : IComandoEdicao
 {
     public Projeto Aplicar(Projeto p)
