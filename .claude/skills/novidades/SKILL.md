@@ -1,66 +1,41 @@
 ---
 name: novidades
-description: Generate the bilingual (PT-BR + EN) marketing text the user posts in his WhatsApp/Telegram groups to announce AcessGallery's new features, and save it to mk.txt at the repo root. Use when the user runs /novidades with a list of what's new (in any format — a dash-bulleted release-notes paragraph, free text, or a reference to specific features), or otherwise asks to write/update this kind of group-broadcast marketing text for a new version.
+description: Redige ou atualiza anúncios bilíngues (PT-BR e EN) das novidades do sonarFrame para grupos de WhatsApp e Telegram, salvando o texto em mk.txt na raiz do repositório. Use quando o usuário pedir divulgação de atualizações ou invocar novidades com recursos, notas de versão ou commits como referência.
 ---
 
-# Novidades (group marketing text)
+# Novidades do sonarFrame
 
-Produces the recurring PT-BR + EN marketing message the user sends to his groups whenever he releases a new AcessGallery version, written to `mk.txt` at the repo root.
+Produzir texto original de divulgação do sonarFrame, editor de vídeo não destrutivo para Windows, operável por teclado e voltado principalmente a pessoas cegas que usam NVDA. O resultado é um rascunho para os grupos do usuário; esta skill não autoriza enviar mensagens ou publicar o anúncio.
 
-## Input
+## Entrada e apuração
 
-`args` is the user's raw description of what's new — often shaped like the app's own release notes (one or more `- ` bulleted items, e.g. the style in `distribution/whatsnew/whatsnew-pt-BR`), but may also be loose free text or just feature names. Treat it as the list of topics to cover, not as finished prose to paste in.
+Usar a descrição do usuário como os assuntos a divulgar. Aceitar listas, texto livre, commits ou uma versão como referência. Consultar um mk.txt anterior apenas para entender formato e tom; escrever novas frases, sem copiar anúncios anteriores ou notas de versão.
 
-## The one rule that matters: write NEW text, never reuse old prose
+Antes de anunciar cada recurso:
 
-The user has corrected this twice already (see memory `feedback_marketing_text.md`): do **not** copy-paste wording from a previous `mk.txt`, from an example he pastes as a style reference, or from the `distribution/whatsnew/*` files. Those are inputs for *what* to cover and *how it's formatted*, never text to recycle. Every run of this skill must produce original sentences describing the given novelties — even if a past message already covered a similar-sounding feature.
+- Conferir o comportamento no código e nos testes relevantes. Usar CHANGELOG.md, docs/desktop.md e docs/release.md para contexto; docs/sonarFrame_ERS_v05.md descreve requisitos, não comprova implementação.
+- Identificar a branch, os commits e a versão alvo. Distinguir implementação local, commit enviado ao remoto, integração na main e release publicada. Uma versão no projeto ou uma entrada em “Em desenvolvimento” não comprova disponibilidade pública.
+- Se o usuário pedir uma campanha de lançamento sem indicar qual versão ou distribuição e isso não puder ser verificado, perguntar esse dado antes de afirmar que a atualização está disponível. Para uma prévia do desenvolvimento, usar linguagem explícita de teste ou desenvolvimento.
+- Confirmar atalhos e nomes dos controles na versão anunciada. Explicar benefícios concretos para edição por teclado e leitor de tela, sem prometer homologação com NVDA apenas porque testes automatizados passaram.
+- Distinguir prévia de uma mídia da biblioteca, reprodução da montagem, salvamento do projeto e exportação do vídeo. Não anunciar exportação, legendas, transições ou IA apenas por constarem do planejamento.
+- Não importar referências à galeria de fotos, Android, Play Store, assinaturas ou planos de outro produto. Só mencionar preço ou licença comercial se houver informação confirmada para o sonarFrame.
 
-## Ground each item in the real feature before writing marketing copy
+## Texto e formato
 
-Before writing a line about a feature, verify what it actually does and how it's gated, so the copy is accurate — don't market from the bullet text alone:
+Salvar em mk.txt na raiz do repositório, substituindo o anúncio anterior. Manter PT-BR primeiro e EN depois, com os mesmos fatos e limitações em linguagem natural. Se o usuário solicitar outro idioma, formato ou destino, seguir esse pedido.
 
-- Search `tools/i18n/strings.tsv` for the feature's `Help_Feature_*_Title`/`_Description` entries (the in-app Ajuda tab descriptions) and its settings-screen strings (e.g. `AiSettings_*`, `GeneralSettings_*`) — these give the precise, already-reviewed wording of what the feature does and any constraints.
-- Check whether the feature is gated (Pro subscription, Plano Facilitador, or free) by grepping the relevant ViewModel/service rather than assuming — e.g. `Subscription_Upsell_*` strings or an `ISubscriptionService` check nearby. Only tag `(Pro)` / `(Plano Facilitador)` / `(Pro ou Facilitador)` when the code actually confirms the gate; leave it untagged if the feature is free for everyone.
-- If the version these novidades belong to isn't obvious from `args`, don't silently assume the repo's current `ApplicationDisplayVersion` in the `.csproj` is already public — that field can already point at a version still sitting on Google Play's **internal testing track**. Ask the user which version this campaign is for if it matters, rather than guessing.
+Cada seção deve conter:
 
-## Output format
+1. Identificação do idioma, título curto com sonarFrame e versão ou condição de teste quando confirmada.
+2. Uma introdução breve, se ajudar a apresentar as novidades.
+3. Um bloco por novidade: nome compreensível e uma a três frases sobre o que mudou e como isso ajuda a pessoa a editar. Evitar nomes internos de classes e detalhes de implementação.
+4. Correções e estabilidade somente quando sustentadas pelas alterações verificadas. Não tratar uma falha intermitente conhecida como resolvida sem evidência.
+5. Chamada final adequada à disponibilidade: baixar uma release, testar uma versão ou acompanhar o desenvolvimento.
 
-Write to `mk.txt` at the repo root (overwrite it), with this shape — it mirrors the structure the user has used historically, but every sentence should be freshly written for this run:
+Usar parágrafos curtos e separadores simples entre PT-BR e EN. Emojis são opcionais e moderados; nunca substituir palavras ou informações essenciais por símbolos. Evitar tabelas e excesso de decoração em mensagens para grupos.
 
-```
-===========================
-PT-BR
-===========================
+Usar um link de download somente quando fornecido pelo usuário ou verificado para a versão anunciada. Sem release confirmada, pode-se apontar para https://github.com/guiper43/SonarFrame-project como repositório do projeto, sem descrevê-lo como download da nova versão. artifacts/desktop é a publicação local para validação, não um endereço público. Se orientar a distribuição portátil, lembrar que toda a pasta acompanha o executável.
 
-📢 <attention-grabbing header for this batch of novidades> 🎉
+## Entrega
 
-<one short intro line tying the items together, optional>
-
-<emoji> <Feature name>
-<1-3 original sentences: what it does, in plain terms, and why it helps a blind/low-vision user. Add a "(Pro)" / "(Plano Facilitador)" / "(Pro ou Facilitador)" tag only if confirmed gated.>
-
-<repeat the emoji+feature block for each item in args>
-
-🛠️ Melhorias de estabilidade, como sempre.   <- only if the input mentions stability/bug fixes
-
-📲 Atualize o AcessGallery e aproveite as novidades:
-
-https://play.google.com/store/apps/details?id=com.RafaelFernandes.acessgallery
-
-
-===========================
-EN
-===========================
-
-<same structure, translated — not a literal word-for-word translation, write it as natural English marketing copy conveying the same facts>
-```
-
-Notes on format:
-- Pick a different emoji per feature based on what it actually is (🔎 for something visual/exploratory, 🎭 for characters, 🔊 for audio/volume, ✅ for a simple capability, etc.) — don't reuse the same emoji for everything.
-- The Play Store link is the one constant that's always reused verbatim: `https://play.google.com/store/apps/details?id=com.RafaelFernandes.acessgallery`.
-- Keep the PT-BR audience in mind as primary (this is the app's main user base — comments and most strings are Portuguese); EN is a faithful second version, not an afterthought, but doesn't need to be longer or more detailed than the PT-BR one.
-- The app is for blind and low-vision users — accessibility/screen-reader framing (how a feature helps someone who can't see the screen) is usually the actual selling point, more than general appeal.
-
-## After writing
-
-Tell the user, briefly, which features you covered and where you grounded each one (the strings.tsv keys you checked), so they can spot anything you got wrong about gating or behavior before sending it to the groups.
+Informar brevemente onde mk.txt foi salvo, quais novidades foram cobertas e quais arquivos ou commits sustentaram as afirmações. Sinalizar lacunas de versão, disponibilidade ou validação que afetem a divulgação. Não gerar tags, releases, commits ou mensagens externas como parte da redação.
