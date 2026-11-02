@@ -1,7 +1,11 @@
 # Plano da feature: reprodução e prévia
 
 Data: 01/11/2026. Base analisada: `7e36d52`, versão 0.1.0.
-Estado: planejamento; implementação não iniciada. Exportação fica em outra feature.
+Estado: incrementos 0 a 4 implementados. A prova inicial teve validação do usuário com áudio e leitor de telas. O editor reúne prévia da biblioteca, composição com camadas, reprodução de intervalos delimitados e navegação CFR/VFR por timestamps da origem. A imagem pausada é composta diretamente das mídias, inclusive antes da primeira reprodução. O vídeo em movimento usa lado maior de 640 pixels, 30 fps e áudio de 48 kHz. Exportação permanece em outra feature.
+
+O incremento 5 reúne testes automatizados, matriz dos formatos de importação, medições de 1/10/30 minutos e conferência da publicação portátil. O aceite de fala com NVDA nesta versão e a execução em máquina limpa devem ser registrados separadamente; não se confundem com testes WPF ou isolamento de PATH nesta máquina. Resultados e limites em [validacao-final-reproducao.md](validacao-final-reproducao.md). O plano abaixo preserva os critérios originais para auditoria.
+
+Decisão de implementação do incremento 1: contratos próprios `IFabricaReprodutorMidia`/`IReprodutorMidia` e coordenador `PreviaBiblioteca`, mantendo `IReprodutorPrevia` reservado à composição. O adaptador LibVLCSharp/WPF fica no Desktop para não introduzir dependência nativa nos pacotes portáveis. Imagens abrem sem inicializar LibVLC. A fábrica mantém uma inicialização nativa por janela e cada troca descarta o player anterior; cancelar a espera não aborta à força uma inicialização nativa em andamento, que será aguardada e liberada ao fechar.
 
 ## Objetivo e limites
 
@@ -46,7 +50,7 @@ Anunciar início, pausa, conclusão, falha e preparação; não anunciar cada at
 
 Sequência principal contínua, preservando recortes e sincronismo do áudio original. Misturar todas as camadas de áudio ativas e áudio dos vídeos, aplicando volume individual sem normalização automática que anule a proporção escolhida. Documentar e testar saturação quando a soma exceder a faixa; qualquer limitador adicional exige decisão explícita.
 
-Proposta para camadas visuais existentes, ainda sem propriedades de layout: quadro de prévia com proporção da primeira mídia visual principal; somente áudio usa quadro neutro. Centralizar e preservar proporção com bordas, sem cortar; compor camadas na ordem armazenada, última acima, preservando transparência. Não persistir isso como orientação de exportação. Confirmar essa convenção antes do incremento de camadas, pois o modelo atual não define empilhamento nem enquadramento. Informar sobreposições acessivelmente sem repetir avisos durante cada quadro.
+Convenção aprovada em 01/11/2026 para camadas visuais existentes, ainda sem propriedades de layout: quadro de prévia com proporção da primeira mídia visual principal; somente áudio usa quadro neutro. Centralizar e preservar proporção com bordas, sem cortar; compor camadas na ordem armazenada, última acima, preservando transparência. Não persistir isso como orientação de exportação. A convenção vale para a prévia; o modelo persistido continua sem propriedades adicionais de layout. Informar sobreposições acessivelmente sem repetir avisos durante cada quadro.
 
 ## Estratégia técnica
 
