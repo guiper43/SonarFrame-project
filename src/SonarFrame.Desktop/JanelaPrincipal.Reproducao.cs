@@ -16,10 +16,11 @@ public partial class JanelaPrincipal
     internal PreviaBiblioteca PreviaAtual => previa;
     internal Task UltimaOperacaoPrevia { get; private set; } = Task.CompletedTask;
 
-    private void ConfigurarPrevia(IFabricaReprodutorMidia? fabrica)
+    private void ConfigurarPrevia(PreviaBiblioteca previa, IFabricaReprodutorMidia fabrica)
     {
-        previa = new PreviaBiblioteca(fabrica ?? new FabricaPreviaVlc(SuperficiePrevia));
-        previa.Alterado += PreviaAlterada;
+        if (fabrica is FabricaPreviaVlc vlc) vlc.AssociarSuperficie(SuperficiePrevia);
+        this.previa = previa;
+        this.previa.Alterado += PreviaAlterada;
         relogioPrevia.Tick += (_, _) => AtualizarPosicaoPrevia();
     }
 
@@ -188,7 +189,6 @@ public partial class JanelaPrincipal
         if (previaEncerrada) return;
         await InterromperComposicaoAsync(true);
         previaEncerrada = true; relogioPrevia.Stop(); previa.Alterado -= PreviaAlterada;
-        await previa.DisposeAsync();
-        await preparadorComposicao.DisposeAsync();
+        await previa.LimparAsync();
     }
 }

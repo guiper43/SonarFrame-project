@@ -2,6 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SonarFrame.Application;
 using SonarFrame.Core;
 using SonarFrame.Desktop;
@@ -82,13 +84,21 @@ public sealed class TestesIntegracaoEditor
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
             _ = dispatcher.InvokeAsync(async () =>
             {
+                IHost? host = null;
+                AsyncServiceScope? escopo = null;
                 JanelaPrincipal? janela = null;
                 Exception? falha = null;
                 var pasta = Path.Combine(AppContext.BaseDirectory, "desktop-tests", Guid.NewGuid().ToString("N"));
                 try
                 {
                     Directory.CreateDirectory(pasta);
-                    janela = new JanelaPrincipal(fabrica, preparador);
+                    host = RegistroDependencias.CriarHostSonarFrame(configurarServicos: servicos =>
+                    {
+                        if (fabrica is not null) servicos.AddScoped(_ => fabrica);
+                        if (preparador is not null) servicos.AddScoped(_ => preparador);
+                    });
+                    escopo = host.Services.CreateAsyncScope();
+                    janela = escopo.Value.ServiceProvider.GetRequiredService<JanelaPrincipal>();
                     await corpo(janela, Path.Combine(pasta, "test.sonarframe"));
                 }
                 catch (Exception e) { falha = e; }
@@ -99,6 +109,9 @@ public sealed class TestesIntegracaoEditor
                         janela?.PararTarefasEmSegundoPlano();
                         if (janela is not null) await janela.EncerrarPreviaAsync();
                         if (janela?.IsLoaded == true) janela.Hide();
+                        if (escopo is { } escopoAtivo) await escopoAtivo.DisposeAsync();
+                        if (host is IAsyncDisposable hostAssincrono) await hostAssincrono.DisposeAsync();
+                        else host?.Dispose();
                         if (Directory.Exists(pasta)) Directory.Delete(pasta, true);
                     }
                     catch (Exception e) { falha ??= e; }

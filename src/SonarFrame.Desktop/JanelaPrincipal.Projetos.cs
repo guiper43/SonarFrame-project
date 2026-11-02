@@ -15,10 +15,12 @@ public partial class JanelaPrincipal
 {
     private PersistenciaProjeto? persistencia;
     private ConfiguracoesDesktop configuracoes = ConfiguracoesDesktop.Padrao;
-    private readonly RepositorioConfiguracoes repositorioConfiguracoes = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sonarFrame", "settings.json"));
+    private readonly RepositorioConfiguracoes repositorioConfiguracoes;
+    private readonly CatalogoProjetos catalogoProjetos;
     private readonly DispatcherTimer salvamentoAutomatico = new() { Interval = TimeSpan.FromSeconds(15) };
     private bool emTransicao;
     private bool fechamentoAprovado;
+    internal Func<Task>? EncerrarServicosAsync { get; set; }
     private bool Ocupado => salvando || emTransicao;
     internal SessaoEdicao? SessaoAtual => sessao;
     internal void PararTarefasEmSegundoPlano() => salvamentoAutomatico.Stop();
@@ -77,7 +79,20 @@ public partial class JanelaPrincipal
         salvamentoAutomatico.Stop();
         emTransicao = true; Estrutura.IsEnabled = false;
         Anunciar("Encerrando a prévia e liberando os recursos.");
-        await EncerrarPreviaAsync(); fechamentoAprovado = true;
+        try
+        {
+            try { await EncerrarPreviaAsync(); }
+            finally
+            {
+                if (EncerrarServicosAsync is { } encerrar) await encerrar();
+            }
+        }
+        catch (Exception erro)
+        {
+            MessageBox.Show(this, "Não foi possível liberar todos os recursos ao encerrar: " + erro.Message,
+                "Encerrar sonarFrame", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        fechamentoAprovado = true;
 
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
@@ -127,7 +142,7 @@ public partial class JanelaPrincipal
         salvando = true;
         try
         {
-            var substituto = new PersistenciaProjeto(sessao, repositorio, dialogo.FileName);
+            var substituto = new PersistenciaProjeto(sessao, repositorio, dialogo.FileName, relogio);
             await substituto.SalvarAsync();
             var anterior = persistencia;
             persistencia = substituto; caminhoProjeto = dialogo.FileName;
@@ -147,7 +162,7 @@ public partial class JanelaPrincipal
         if (Ocupado) return;
         ResultadoCatalogo catalogo;
         emTransicao = true; Estrutura.IsEnabled = false;
-        try { catalogo = await new CatalogoProjetos(repositorio).LerAsync(configuracoes.DiretorioProjetos); }
+        try { catalogo = await catalogoProjetos.LerAsync(configuracoes.DiretorioProjetos); }
         catch (Exception ex) { Anunciar("Não foi possível listar projetos: " + ex.Message); return; }
         finally { emTransicao = false; Estrutura.IsEnabled = true; }
         var painel = new StackPanel();

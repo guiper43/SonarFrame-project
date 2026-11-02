@@ -21,18 +21,40 @@ public partial class JanelaPrincipal : Window
     private bool atualizando;
     private bool salvando;
     private bool exibirPropriedadesBiblioteca;
-    private readonly RepositorioProjetosSqlite repositorio = new();
+    private readonly IRepositorioProjetos repositorio;
+    private readonly ILeitorMetadadosMidia leitorMetadados;
+    private readonly TimeProvider relogio;
     private readonly List<string> mensagensRecentes = [];
     private sealed record Linha(Guid Id, string Rotulo)
     {
         public override string ToString() => Rotulo;
     }
-    public JanelaPrincipal() : this(null) { }
-    internal JanelaPrincipal(IFabricaReprodutorMidia? fabricaPrevia, IPreparadorComposicao? preparador = null)
+    public JanelaPrincipal(
+        IRepositorioProjetos repositorio,
+        ILeitorMetadadosMidia leitorMetadados,
+        RepositorioConfiguracoes repositorioConfiguracoes,
+        CatalogoProjetos catalogoProjetos,
+        IFabricaReprodutorMidia fabricaPrevia,
+        PreviaBiblioteca previa,
+        IPreparadorComposicao preparadorComposicao,
+        TimeProvider relogio)
     {
+        ArgumentNullException.ThrowIfNull(repositorio);
+        ArgumentNullException.ThrowIfNull(leitorMetadados);
+        ArgumentNullException.ThrowIfNull(repositorioConfiguracoes);
+        ArgumentNullException.ThrowIfNull(catalogoProjetos);
+        ArgumentNullException.ThrowIfNull(fabricaPrevia);
+        ArgumentNullException.ThrowIfNull(previa);
+        ArgumentNullException.ThrowIfNull(preparadorComposicao);
+        ArgumentNullException.ThrowIfNull(relogio);
+        this.repositorio = repositorio;
+        this.leitorMetadados = leitorMetadados;
+        this.repositorioConfiguracoes = repositorioConfiguracoes;
+        this.catalogoProjetos = catalogoProjetos;
+        this.relogio = relogio;
         InitializeComponent();
-        ConfigurarPrevia(fabricaPrevia);
-        ConfigurarComposicao(preparador);
+        ConfigurarPrevia(previa, fabricaPrevia);
+        ConfigurarComposicao(preparadorComposicao);
         ConfigurarCicloDeVida();
         Loaded += (_, _) => BotaoNovo.Focus();
     }
@@ -60,7 +82,7 @@ public partial class JanelaPrincipal : Window
         }
         sessao = new SessaoEdicao(projeto, salvo);
         caminhoProjeto = caminho;
-        persistencia = new PersistenciaProjeto(sessao, repositorio, caminhoProjeto);
+        persistencia = new PersistenciaProjeto(sessao, repositorio, caminhoProjeto, relogio);
         TelaInicial.Visibility = Visibility.Collapsed;
         Editor.Visibility = Visibility.Visible;
         mensagensRecentes.Clear();
@@ -301,8 +323,6 @@ public partial class JanelaPrincipal : Window
     private void AdicionarMidia(object sender, RoutedEventArgs e)
     {
         if (sessao is null) return;
-        var executavel = Path.Combine(AppContext.BaseDirectory, "tools", "ffprobe.exe");
-        var leitorMetadados = new LeitorMetadadosFfprobe(new ExecutorFfprobe(File.Exists(executavel) ? executavel : "ffprobe"));
         var dialogo = new DialogoImportacao(this, sessao, leitorMetadados);
         dialogo.ShowDialog(); Atualizar();
         if (Biblioteca.Items.Count > 0)

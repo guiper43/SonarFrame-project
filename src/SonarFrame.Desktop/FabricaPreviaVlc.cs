@@ -11,14 +11,23 @@ using SonarFrame.Core;
 
 namespace SonarFrame.Desktop;
 
-internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaReprodutorMidia
+internal sealed class FabricaPreviaVlc : IFabricaReprodutorMidia
 {
     private readonly Lazy<Task<LibVLC>> biblioteca = new(() => Task.Run(() => new LibVLC("--no-video-title-show", "--no-osd", "--no-spu")));
+    private ContentControl? superficie;
+    private int descartada;
+
+    public FabricaPreviaVlc() { }
+
+    internal FabricaPreviaVlc(ContentControl superficie) => this.superficie = superficie;
+
+    internal void AssociarSuperficie(ContentControl destino) => superficie = destino;
 
     public async Task<IReprodutorMidia> CriarAsync(Midia midia, CancellationToken token)
     {
+        var destino = superficie ?? throw new InvalidOperationException("Superfície de prévia não configurada.");
         if (!File.Exists(midia.Caminho)) throw new FileNotFoundException("Arquivo ausente. Use Localizar arquivo na biblioteca.");
-        if (midia.Tipo == TipoMidia.Imagem) return new PreviaImagem(superficie, midia.Caminho);
+        if (midia.Tipo == TipoMidia.Imagem) return new PreviaImagem(destino, midia.Caminho);
         LibVLC motor;
         try { motor = await biblioteca.Value.WaitAsync(token); }
         catch (OperationCanceledException) { throw; }
@@ -26,12 +35,12 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         token.ThrowIfCancellationRequested();
         var player = await Task.Run(() => new LibVLCSharp.Shared.MediaPlayer(motor)
         { EnableKeyInput = false, EnableMouseInput = false, EnableHardwareDecoding = false });
-        return new ReprodutorMidiaVlc(superficie, motor, player, midia);
+        return new ReprodutorMidiaVlc(destino, motor, player, midia);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (!biblioteca.IsValueCreated) return;
+        if (Interlocked.Exchange(ref descartada, 1) != 0 || !biblioteca.IsValueCreated) return;
         LibVLC motor;
         try { motor = await biblioteca.Value; }
         catch { return; }

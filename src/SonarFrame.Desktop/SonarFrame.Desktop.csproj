@@ -11,6 +11,8 @@
   <ItemGroup><ProjectReference Include="../SonarFrame.Infrastructure/SonarFrame.Infrastructure.csproj" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.10.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
   </ItemGroup>
   <ItemGroup Condition="Exists('../../.tools/ffmpeg/ffprobe.exe')">
