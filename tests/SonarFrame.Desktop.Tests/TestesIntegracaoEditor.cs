@@ -73,7 +73,7 @@ public sealed class TestesIntegracaoEditor
         Assert.Contains("original.mp4", janela.Propriedades.Text);
         return Task.CompletedTask;
     });
-    private static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo)
+    internal static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo, IFabricaReprodutorMidia? fabrica = null, int prazoSegundos = 30, IPreparadorComposicao? preparador = null)
     {
         var conclusao = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -83,25 +83,32 @@ public sealed class TestesIntegracaoEditor
             _ = dispatcher.InvokeAsync(async () =>
             {
                 JanelaPrincipal? janela = null;
+                Exception? falha = null;
                 var pasta = Path.Combine(AppContext.BaseDirectory, "desktop-tests", Guid.NewGuid().ToString("N"));
                 try
                 {
                     Directory.CreateDirectory(pasta);
-                    janela = new JanelaPrincipal();
+                    janela = new JanelaPrincipal(fabrica, preparador);
                     await corpo(janela, Path.Combine(pasta, "test.sonarframe"));
-                    conclusao.TrySetResult();
                 }
-                catch (Exception e) { conclusao.TrySetException(e); }
+                catch (Exception e) { falha = e; }
                 finally
                 {
-                    janela?.PararTarefasEmSegundoPlano();
-                    if (Directory.Exists(pasta)) Directory.Delete(pasta, true);
+                    try
+                    {
+                        janela?.PararTarefasEmSegundoPlano();
+                        if (janela is not null) await janela.EncerrarPreviaAsync();
+                        if (janela?.IsLoaded == true) janela.Hide();
+                        if (Directory.Exists(pasta)) Directory.Delete(pasta, true);
+                    }
+                    catch (Exception e) { falha ??= e; }
+                    if (falha is null) conclusao.TrySetResult(); else conclusao.TrySetException(falha);
                     dispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
                 }
             });
             Dispatcher.Run();
         });
         thread.SetApartmentState(ApartmentState.STA); thread.IsBackground = true; thread.Start();
-        return conclusao.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        return conclusao.Task.WaitAsync(TimeSpan.FromSeconds(prazoSegundos));
     }
 }

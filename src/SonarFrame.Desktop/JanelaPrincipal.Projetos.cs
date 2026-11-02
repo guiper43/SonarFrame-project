@@ -63,6 +63,7 @@ public partial class JanelaPrincipal
                 if (escolha == MessageBoxResult.Yes && !await SalvarAtualAsync()) return false;
             }
             if (persistencia is not null) await persistencia.FecharAsync(descartarAlteracoesNaoSalvas: true);
+            await LimparPreviaAsync();
             return true;
         }
         catch (Exception e) { Anunciar("Não foi possível fechar o projeto: " + e.Message); return false; }
@@ -73,7 +74,10 @@ public partial class JanelaPrincipal
         if (fechamentoAprovado) return;
         e.Cancel = true;
         if (!await PodeSairAsync()) return;
-        salvamentoAutomatico.Stop(); fechamentoAprovado = true;
+        salvamentoAutomatico.Stop();
+        emTransicao = true; Estrutura.IsEnabled = false;
+        Anunciar("Encerrando a prévia e liberando os recursos.");
+        await EncerrarPreviaAsync(); fechamentoAprovado = true;
 
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
@@ -133,6 +137,11 @@ public partial class JanelaPrincipal
         catch (Exception ex) { Anunciar("Falha ao salvar como: " + ex.Message); }
         finally { salvando = false; }
     }
+    internal sealed record LinhaProjeto(string Caminho, string Rotulo)
+    {
+        public override string ToString() => Rotulo;
+    }
+
     private async void MeusProjetos(object sender, RoutedEventArgs e)
     {
         if (Ocupado) return;
@@ -144,7 +153,7 @@ public partial class JanelaPrincipal
         var painel = new StackPanel();
         painel.Children.Add(new TextBlock { Text = catalogo.Projetos.Count == 0 ? "Nenhum projeto nesta pasta. Crie um projeto ou altere a pasta nas Configurações." : "Selecione um projeto para abrir.", TextWrapping = TextWrapping.Wrap });
         var lista = new ListBox { Height = 240, DisplayMemberPath = "Rotulo", Margin = new Thickness(0, 12, 0, 12) };
-        var linhas = catalogo.Projetos.Select(p => new { p.Caminho, Rotulo = $"{p.Nome} — {p.UltimaModificacaoUtc.ToLocalTime():g}{(p.TemRecuperacao ? " — recuperação disponível" : "")}" }).ToArray();
+        var linhas = catalogo.Projetos.Select(p => new LinhaProjeto(p.Caminho, $"Projeto: {p.Nome}. Caminho: {p.Caminho}. Modificado: {p.UltimaModificacaoUtc.ToLocalTime():g}{(p.TemRecuperacao ? ". Recuperação disponível" : "")}")).ToArray();
         lista.ItemsSource = linhas; AutomationProperties.SetName(lista, "Projetos salvos"); painel.Children.Add(lista);
         var dialogo = CriarDialogo("Meus projetos", painel); string? escolhido = null;
         var abrir = new Button { Content = "Abrir projeto", IsDefault = true, IsEnabled = false };

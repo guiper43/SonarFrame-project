@@ -25,33 +25,44 @@ public partial class JanelaPrincipal
     {
         Propriedades.Text = $"{item.Nome}\n{(item.EhCamada ? "Camada independente" : "Sequência principal")}\nInício na composição: {item.Inicio}\nDuração: {item.Duracao}\nVolume: {item.Volume}%";
     }
-    private void AplicarAcao(Action<AcoesEdicao> acao, string mensagem)
+    private async Task AplicarAcaoAsync(Action<AcoesEdicao> acao, string mensagem)
     {
-        if (sessao is null) return;
+        if (sessao is null || !await PrepararEdicaoAsync()) return;
         try { acao(new AcoesEdicao(sessao)); exibirPropriedadesBiblioteca = false; Atualizar(); Anunciar(mensagem); }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException) { Anunciar(e.Message); }
     }
-    private void DividirNoCursor(object sender, RoutedEventArgs e) => AplicarAcao(a => a.DividirNoCursor(), "Clipe dividido na posição do cursor.");
-    private void ExcluirIntervaloSelecionado(object sender, RoutedEventArgs e)
+    private async void DividirNoCursor(object sender, RoutedEventArgs e)
     {
-        AplicarAcao(a => a.ExcluirSelecao(), "Intervalo excluído e lacuna fechada.");
+        if (sessao is null || !await PrepararEdicaoAsync()) return;
+        try
+        {
+            var posicao = sessao.Atual.Cursor;
+            new AcoesEdicao(sessao).DividirNoCursor();
+            exibirPropriedadesBiblioteca = false; Atualizar();
+            Anunciar($"Corte realizado em {posicao}.");
+        }
+        catch (Exception erro) when (erro is ArgumentException or InvalidOperationException) { Anunciar(erro.Message); }
+    }
+    private async void ExcluirIntervaloSelecionado(object sender, RoutedEventArgs e)
+    {
+        await AplicarAcaoAsync(a => a.ExcluirSelecao(), "Intervalo excluído e lacuna fechada.");
         NavegadorTemporal.Focus();
     }
-    private void AlterarVolume(object sender, RoutedEventArgs e)
+    private async void AlterarVolume(object sender, RoutedEventArgs e)
     {
         if (sessao is null) return;
         try
         {
             var selecionado = new AcoesEdicao(sessao).Selecionado();
             var valores = SolicitarNumeros("Volume do conteúdo", [("Volume, em porcentagem", (decimal)selecionado.Volume, 0m, 200m, true)]);
-            if (valores is not null) AplicarAcao(a => a.DefinirVolumeSelecionado((int)valores[0]), $"Volume definido para {valores[0]}%.");
+            if (valores is not null) await AplicarAcaoAsync(a => a.DefinirVolumeSelecionado((int)valores[0]), $"Volume definido para {valores[0]}%.");
         }
         catch (InvalidOperationException ex) { Anunciar(ex.Message); }
         BotaoVolume.Focus();
     }
     private static decimal Segundos(TempoMidia tempo) => (decimal)tempo.Numerador / tempo.Denominador;
     private static TempoMidia Tempo(decimal segundos) => new((long)decimal.Round(segundos * 1_000_000), 1_000_000);
-    private void AdicionarCamadaIndependente(object sender, RoutedEventArgs e)
+    private async void AdicionarCamadaIndependente(object sender, RoutedEventArgs e)
     {
         if (sessao is null || Biblioteca.SelectedItems.Count != 1) { Anunciar("Selecione uma mídia da biblioteca."); return; }
         var midia = sessao.Atual.Biblioteca.Single(a => a.Id == ((Linha)Biblioteca.SelectedItem).Id);
@@ -59,7 +70,7 @@ public partial class JanelaPrincipal
         if (disponivel <= TempoMidia.Zero) { Anunciar("Posicione o cursor antes do fim da composição para adicionar uma camada."); return; }
         var duracao = TempoMidia.Minimo(midia.Duracao ?? TempoMidia.Segundos(5), disponivel);
         var valores = SolicitarValoresCamada(sessao.Atual.Cursor, TempoMidia.Zero, duracao);
-        if (valores is not null && Executar(new AdicionarCamada(midia.Id, Tempo(valores[0]), Tempo(valores[1]), Tempo(valores[2]))))
+        if (valores is not null && await ExecutarAsync(new AdicionarCamada(midia.Id, Tempo(valores[0]), Tempo(valores[1]), Tempo(valores[2]))))
             Anunciar("Camada adicionada. A duração da sequência principal foi preservada.");
         BotaoAdicionarCamada.Focus();
     }
@@ -67,19 +78,19 @@ public partial class JanelaPrincipal
         [("Início na composição, em segundos", Segundos(inicio), 0m, 864000m, false),
          ("Início no arquivo original, em segundos", Segundos(origem), 0m, 864000m, false),
          ("Duração, em segundos", Segundos(duracao), 0.000001m, 864000m, false)]);
-    private void EditarCamada(object sender, RoutedEventArgs e)
+    private async void EditarCamada(object sender, RoutedEventArgs e)
     {
         if (sessao is null) return;
         var camada = sessao.Atual.Camadas.SingleOrDefault(l => l.Clipe.Id == sessao.Atual.ItemSelecionadoId);
         if (camada is null) { Anunciar("Selecione uma camada da composição."); return; }
         var valores = SolicitarValoresCamada(camada.Inicio, camada.Clipe.InicioNaOrigem, camada.Clipe.Duracao);
-        if (valores is not null && Executar(new AtualizarCamada(camada.Clipe.Id, Tempo(valores[0]), Tempo(valores[1]), Tempo(valores[2])))) Anunciar("Intervalo da camada atualizado.");
+        if (valores is not null && await ExecutarAsync(new AtualizarCamada(camada.Clipe.Id, Tempo(valores[0]), Tempo(valores[1]), Tempo(valores[2])))) Anunciar("Intervalo da camada atualizado.");
         BotaoEditarCamada.Focus();
     }
-    private void ExcluirCamada(object sender, RoutedEventArgs e)
+    private async void ExcluirCamada(object sender, RoutedEventArgs e)
     {
         if (sessao?.Atual.ItemSelecionadoId is not { } id) return;
-        if (Executar(new RemoverCamada(id))) Anunciar("Camada removida. A sequência principal foi preservada.");
+        if (await ExecutarAsync(new RemoverCamada(id))) Anunciar("Camada removida. A sequência principal foi preservada.");
         LinhaDoTempo.Focus();
     }
     private async void LocalizarMidia(object sender, RoutedEventArgs e)
@@ -91,6 +102,7 @@ public partial class JanelaPrincipal
         emTransicao = true; Estrutura.IsEnabled = false;
         try
         {
+            await LimparPreviaAsync();
             var executavel = Path.Combine(AppContext.BaseDirectory, "tools", "ffprobe.exe");
             await new AcoesEdicao(sessao).ReligarAsync(id, dialogo.FileName, new LeitorMetadadosFfprobe(new ExecutorFfprobe(File.Exists(executavel) ? executavel : "ffprobe")));
             exibirPropriedadesBiblioteca = true; Atualizar();

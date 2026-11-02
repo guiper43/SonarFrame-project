@@ -4,9 +4,17 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
+    <PlatformTarget>x64</PlatformTarget>
+    <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
+    <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../SonarFrame.Infrastructure/SonarFrame.Infrastructure.csproj" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.10.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
+  </ItemGroup>
   <ItemGroup Condition="Exists('../../.tools/ffmpeg/ffprobe.exe')">
+    <Content Include="../../.tools/ffmpeg/ffmpeg.exe" Link="tools/ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../.tools/ffmpeg/ffprobe.exe" Link="tools/ffprobe.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../.tools/ffmpeg/LICENSE.txt" Link="tools/FFmpeg-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../.tools/ffmpeg/README.txt" Link="tools/FFmpeg-README.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
