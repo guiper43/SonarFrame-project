@@ -11,23 +11,39 @@ namespace SonarFrame.Infrastructure;
 
 public interface IExecutorFfprobe
 {
+    Task<string> InspecionarJanelaQuadrosAsync(string caminhoCompleto, TempoMidia inicio, TempoMidia fim, CancellationToken token) => InspecionarQuadrosAsync(caminhoCompleto, token);
     Task<string> InspecionarAsync(string caminhoCompleto, CancellationToken token);
+    Task<string> InspecionarQuadrosAsync(string caminhoCompleto, CancellationToken token) => throw new NotSupportedException("Leitura de quadros indisponível.");
 }
 
 public sealed class ExecutorFfprobe(string executavel, TimeSpan? timeout = null) : IExecutorFfprobe
 {
-    public async Task<string> InspecionarAsync(string caminhoCompleto, CancellationToken token)
+    public Task<string> InspecionarJanelaQuadrosAsync(string caminhoCompleto, TempoMidia inicio, TempoMidia fim, CancellationToken token)
+    {
+        string Segundos(TempoMidia t) => ((decimal)t.Numerador / t.Denominador).ToString("0.#########", CultureInfo.InvariantCulture);
+        return ExecutarAsync(caminhoCompleto,
+            ["-read_intervals", $"{Segundos(inicio)}%{Segundos(fim)}", "-select_streams", "V:0", "-show_frames", "-show_entries", "frame=best_effort_timestamp:stream=time_base:format=start_time"],
+            64 * 1024 * 1024, timeout ?? TimeSpan.FromMinutes(5), token);
+    }
+    public Task<string> InspecionarAsync(string caminhoCompleto, CancellationToken token) => ExecutarAsync(caminhoCompleto,
+        ["-show_streams", "-show_format"], 2 * 1024 * 1024, timeout ?? TimeSpan.FromSeconds(30), token);
+
+    public Task<string> InspecionarQuadrosAsync(string caminhoCompleto, CancellationToken token) => ExecutarAsync(caminhoCompleto,
+        ["-select_streams", "V:0", "-show_frames", "-show_entries", "frame=best_effort_timestamp:stream=time_base:format=start_time"],
+        64 * 1024 * 1024, timeout ?? TimeSpan.FromMinutes(5), token);
+
+    private async Task<string> ExecutarAsync(string caminhoCompleto, string[] argumentos, int limite, TimeSpan duracaoLimite, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         using var prazo = CancellationTokenSource.CreateLinkedTokenSource(token);
-        prazo.CancelAfter(timeout ?? TimeSpan.FromSeconds(30));
+        prazo.CancelAfter(duracaoLimite);
         var info = new ProcessStartInfo(executavel)
         {
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
-        foreach (var argumento in new[] { "-v", "error", "-protocol_whitelist", "file", "-show_streams", "-show_format", "-of", "json", caminhoCompleto })
+        foreach (var argumento in new[] { "-v", "error", "-protocol_whitelist", "file" }.Concat(argumentos).Concat(["-of", "json", caminhoCompleto]))
             info.ArgumentList.Add(argumento);
         using var processo = new Process { StartInfo = info };
         var iniciado = false;
@@ -36,7 +52,7 @@ public sealed class ExecutorFfprobe(string executavel, TimeSpan? timeout = null)
             try { iniciado = processo.Start(); }
             catch (Win32Exception ex) { throw new InvalidOperationException("Não foi possível iniciar o leitor de mídias. Verifique a instalação do sonarFrame (ffprobe).", ex); }
             using var registro = prazo.Token.Register(() => Kill(processo));
-            var saida = LerComLimite(processo.StandardOutput, 2 * 1024 * 1024, prazo.Token);
+            var saida = LerComLimite(processo.StandardOutput, limite, prazo.Token);
             var erros = LerComLimite(processo.StandardError, 64 * 1024, prazo.Token);
 
             _ = saida.ContinueWith(_ => Kill(processo), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -47,7 +63,7 @@ public sealed class ExecutorFfprobe(string executavel, TimeSpan? timeout = null)
             return await saida.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        { throw new TimeoutException("A leitura deste arquivo excedeu 30 segundos. Os demais arquivos poderão ser importados."); }
+        { throw new TimeoutException($"A leitura deste arquivo excedeu {duracaoLimite.TotalSeconds:0} segundos. Tente novamente ou verifique a mídia."); }
         finally
         {
             if (iniciado)
