@@ -28,7 +28,7 @@ No Windows, com SDK .NET 10:
 ./release.ps1 -ExpectedTag v0.1.0
 ```
 
-O script prepara as ferramentas de mídia, compila, executa os testes, gera os pacotes NuGet e publica uma distribuição Windows x64 com runtime incluído. Os resultados ficam em `artifacts/releases/0.1.0`:
+O script prepara as ferramentas de mídia, compila, executa os testes, gera os pacotes NuGet e publica uma distribuição Windows x64 com runtime incluído. Os resultados ficam em `.tools/releases/0.1.0`; o executável para validação fica somente em `artifacts/desktop`:
 
 - `sonarFrame-0.1.0-win-x64.zip`: distribuição portátil; extraia todo o conteúdo antes de executar `SonarFrame.Desktop.exe`.
 - `packages/`: pacotes Core, Application e Infrastructure.

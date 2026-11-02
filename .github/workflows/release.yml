@@ -27,9 +27,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sonarframe-release
+          include-hidden-files: true
           path: |
-            artifacts/releases/**/*.zip
-            artifacts/releases/**/*.nupkg
-            artifacts/releases/**/SHA256SUMS.txt
-            artifacts/releases/**/CHANGELOG.md
-            artifacts/releases/**/release.md
+            .tools/releases/**/*.zip
+            .tools/releases/**/*.nupkg
+            .tools/releases/**/SHA256SUMS.txt
+            .tools/releases/**/CHANGELOG.md
+            .tools/releases/**/release.md
