@@ -48,13 +48,23 @@ Arquivos ausentes ou ilegíveis geram mensagem acessível. Use **Localizar arqui
 
 ## Editar a composição
 
+A reprodução começa pelo cursor ou pelo intervalo selecionado, depois de preparar uma reserva inicial. O restante é preparado durante a reprodução. Segmentos equivalentes são reaproveitados após edições, com caches separados de áudio e vídeo; alterar volume preserva o vídeo. A primeira preparação pode levar mais tempo. A implementação atual copia vídeo e áudio PCM para uma entrada contínua, sem codificação AAC integral. Consulte [a implementação e sua validação](plano-entrada-continua.md).
+
+Se a preparação não acompanhar a reprodução, o vídeo pausa na posição atual e informa “Carregando vídeo. A reprodução continuará desta posição.” Ao recompor a reserva, retoma automaticamente e anuncia “Reproduzindo”, preservando o foco. Acionar Pausar durante essa espera impede a retomada automática. Cancelar encerra a preparação; navegar ou editar passa a usar a nova posição ou composição. A reprodução de uma seleção termina no limite selecionado.
+
+O arquivo `%LOCALAPPDATA%/sonarFrame/diagnostico-reproducao.json` registra a abertura e observações da saída nativa, sem anúncios ao NVDA. As medições anteriores da montagem completa estão em [investigação e benchmarks](resultado-recomposicao-incremental.md); não representam a latência da entrada contínua.
+
 - **Inserir antes do clipe selecionado** usa os itens selecionados na biblioteca e a posição do clipe selecionado na sequência.
 - **Dividir no cursor** separa o clipe principal que contém a posição temporal atual. O cursor precisa estar dentro do clipe, não em uma de suas extremidades.
 - **Excluir intervalo selecionado** remove a seleção temporal e fecha a lacuna. Camadas que cruzam o intervalo são recortadas, e as posteriores são deslocadas.
 - **Ajustar volume** nas propriedades altera o áudio do conteúdo selecionado entre 0 e 200%. Imagens não oferecem esse controle.
 - **Adicionar como camada** insere uma mídia da biblioteca em um intervalo independente. O diálogo permite definir início na composição, início na origem e duração. A camada precisa caber na composição e na mídia de origem.
 - **Editar intervalo da camada** e **Remover camada** atuam somente na camada selecionada e não encurtam a sequência principal.
-- Todas essas operações permitem desfazer/refazer. A lista identifica sequência principal e camadas, com início e duração.
+- Todas essas operações permitem desfazer/refazer. A lista identifica nome, tipo de mídia, ordem na lista, sequência principal ou camada, início, fim e duração. Mover para a posição atual não cria uma edição no histórico.
+
+Alt+3 leva diretamente à lista da timeline. Enter posiciona no início do item selecionado. Shift+F10, Aplicações ou botão direito abre o menu com Consultar posição e intervalo, Dividir no cursor, Excluir intervalo, Remover conteúdo, reordenação e histórico. Escape retorna à timeline. A consulta informa os limites e a duração da seleção com milissegundos. Selecionar um item com Cima/Baixo não desloca o cursor nem altera o intervalo temporal. Dividir atua no clipe principal sob o cursor, que pode ser diferente do item selecionado.
+
+Na própria timeline, Esquerda/Direita move um quadro, Ctrl+Esquerda/Direita move um segundo e Page Up/Down desloca dez segundos; Shift estende a seleção. Delete após seleção temporal exclui o trecho. Cima/Baixo ativa o contexto de item: Delete abre o menu na ação de remover o conteúdo da composição, sem removê-lo imediatamente, mesmo havendo um intervalo anterior selecionado. A divisão confirma o ponto do corte e as duas partes. A exclusão confirma o intervalo removido, a nova posição e a duração da composição. Desfazer/refazer informa o estado restaurado; Ctrl+Z/Y sem histórico informa que a operação está indisponível.
 
 As propriedades acompanham o conteúdo selecionado na biblioteca ou na composição. Selecionar uma mídia da biblioteca não aplica alterações ao clipe anteriormente selecionado.
 
@@ -76,8 +86,8 @@ Mídias ausentes são informadas ao abrir. Selecione o item na biblioteca e acio
 2. Escolha **Explorar projeto de demonstração**. São três vídeos fictícios de dez segundos; nenhum arquivo pessoal é lido.
 3. Pressione Alt+1 para a biblioteca e Tab para a lista. As setas percorrem as mídias.
 4. Alt+2 leva às propriedades, apresentadas em um campo somente leitura que permite leitura e cópia pelo teclado.
-5. Alt+3 leva ao controle temporal; Baixo percorre as ações e a lista de conteúdos. Na lista, Cima/Baixo seleciona itens e Esquerda/Direita desloca o cursor temporal.
-6. Shift+F10 abre o menu de reordenação da lista. Também há botões para mover antes/depois.
+5. Alt+3 leva à timeline. Cima/Baixo seleciona itens e Esquerda/Direita desloca o cursor temporal. Shift seleciona um intervalo, que pode ser excluído com Delete nessa mesma lista.
+6. Shift+F10, Aplicações ou botão direito abre o menu de edição, incluindo reordenação. Escape fecha o menu e retorna à timeline.
 7. Alt+4 leva à prévia e Alt+5 aos comandos do projeto.
 8. F1 apresenta a ajuda. Escape fecha diálogos e menus.
 
@@ -95,13 +105,13 @@ Nos menus Projeto e Ajuda, Enter ou Espaço abre/recolhe o cabeçalho. Esquerda/
 | Ctrl+S | Salvar projeto |
 | Ctrl+Z / Ctrl+Y | Desfazer / refazer edição fora de campos de texto |
 | Ctrl+B | Dividir no cursor fora de campos de texto |
-| Delete | Na biblioteca, remover mídias; no controle temporal, excluir intervalo |
+| Delete | Na biblioteca, remover mídias; na timeline, excluir a seleção temporal ou, após Cima/Baixo, abrir a ação de remover o item |
 | F1 | Ajuda dos atalhos |
 | Shift+F10 | Menu contextual da lista de conteúdos |
 | Ctrl+Tab | Alternar guias do diálogo Adicionar |
 | Escape | Fechar diálogo ou menu |
 
-Somente no controle **Navegação temporal**, setas avançam/retrocedem um quadro, Ctrl+setas um segundo, Page Up/Down dez segundos e Home/End vão aos extremos. Shift estende a seleção. Campos de texto e listas conservam seu comportamento nativo. O controle temporal informa a posição por UI Automation e pela região de mensagens.
+Na lista da **timeline**, Esquerda/Direita avança/retrocede um quadro, Ctrl+setas um segundo, Page Up/Down dez segundos e Home/End vão aos extremos. Shift estende a seleção. Campos de texto e a biblioteca conservam seu comportamento nativo. A posição fica visível e as mudanças manuais são anunciadas; o menu permite consultar posição e seleção.
 
 ## O que já funciona
 
@@ -145,7 +155,7 @@ A timeline lista clipes, trechos e camadas por início no vídeo; em inícios ig
 
 ## Reprodução da sequência principal
 
-Na timeline, use **Reproduzir composição**, **Parar composição**, **Reproduzir intervalo selecionado** e **Cancelar preparação da composição**. Espaço na lista da composição ou no controle temporal alterna reprodução/pausa. A primeira reprodução prepara uma mídia temporária local; começa no cursor e reinicia do início quando o cursor está no fim. Pausar mantém a posição, Parar retorna ao início. A prévia visual aparece na área compartilhada de prévia. Biblioteca e composição não tocam simultaneamente.
+Na timeline, use **Reproduzir composição**, **Parar composição**, **Reproduzir intervalo selecionado** e **Cancelar preparação da composição**. Espaço na lista da composição alterna reprodução/pausa. A primeira reprodução prepara uma mídia temporária local; começa no cursor e reinicia do início quando o cursor está no fim. Pausar mantém a posição, Parar retorna ao início. A prévia visual aparece na área compartilhada de prévia. Biblioteca e composição não tocam simultaneamente.
 
 A composição respeita ordem, recortes na origem, duração das fotos e volumes individuais. Camadas entram e saem em seus intervalos; a última camada visual adicionada aparece acima. As imagens são centralizadas sem corte, preservando proporção e transparência. O quadro segue a proporção da primeira mídia visual da sequência principal, com lado maior de 640 pixels; somente áudio usa fundo preto de 640×360. A prévia usa 30 quadros/s e áudio estéreo de 48 kHz, para conferir a montagem. Consultar prévia informa também os nomes das camadas ativas, sem anúncios contínuos.
 
@@ -159,7 +169,7 @@ Retomar revalida a composição e os arquivos de origem por caminho, tamanho e d
 
 Os metadados de áudio e vídeo são reutilizados em memória, com até 256 entradas por janela, identificadas por caminho, tamanho, última escrita e tipo da mídia. Leituras canceladas ou arquivos alterados durante a consulta não entram no cache. A consulta de quadros começa com uma janela de cinco segundos antes e depois do cursor, usando fim absoluto no ffprobe. Se faltarem quadros vizinhos, amplia a margem para 20 e 80 segundos e, como recurso de segurança, recorre ao índice completo. A janela só é reutilizada quando cobre o instante solicitado e os vizinhos necessários; seu fim não é interpretado como fim da mídia. O índice de navegação é mantido em memória, invalidado quando a origem muda e limitado a 16 mídias ou um milhão de timestamps no conjunto. Uma mídia com mais de um milhão de quadros exige divisão em arquivos menores para navegação precisa. A preparação completa pode levar tempo em projetos longos; a interface permite cancelar e continuar trabalhando. Consulte as medições da validação antes de assumir abertura ou busca instantânea.
 
-A última preparação é reutilizada enquanto composição e arquivos de origem não mudarem; cursor e seleção não invalidam a preparação. A preparação usa blocos de cinco segundos, alinhados à grade da prévia de 30 quadros por segundo. Cada bloco considera os recortes, volumes, camadas e arquivos usados naquele intervalo, além das dimensões globais da composição. Blocos intactos são reutilizados; versões anteriores permanecem disponíveis para desfazer/refazer enquanto houver espaço. Alterações que deslocam os conteúdos no tempo podem invalidar vários blocos seguintes. Fontes somente de áudio são decodificadas com até um segundo anterior ao recorte, descartado por atrim antes da montagem, inclusive nas junções dos blocos. A montagem final copia o vídeo dos blocos e codifica o áudio uma única vez, sem compressão de áudio intermediária nas junções. O cache reserva até 1 GB para blocos e 1 GB para a montagem; blocos antigos são descartados por uso quando necessário. Preparar uma seleção também respeita o limite total de 2 GB. O cache é removido ao fechar normalmente. Edição, desfazer/refazer e troca de projeto interrompem a reprodução; a próxima reprodução prepara somente os blocos necessários e monta a versão atual. Fechar ou cancelar encerra o processo de preparação.
+A última preparação é reutilizada enquanto composição e arquivos de origem não mudarem; cursor e seleção não invalidam a preparação. A preparação usa blocos de cinco segundos, alinhados à grade da prévia de 30 quadros por segundo. Cada bloco considera os recortes, volumes, camadas e arquivos usados naquele intervalo, além das dimensões globais da composição. Blocos intactos são reutilizados; versões anteriores permanecem disponíveis para desfazer/refazer enquanto houver espaço. Alterações que deslocam os conteúdos no tempo podem invalidar vários blocos seguintes. Fontes somente de áudio são decodificadas com até um segundo anterior ao recorte, descartado por atrim antes da montagem, inclusive nas junções dos blocos. A montagem final copia vídeo e áudio PCM dos blocos para uma prévia MOV, sem recodificação AAC integral nem compressão intermediária nas junções. Isso aumenta o tamanho da prévia em relação ao AAC, dentro do mesmo limite total de cache. O cache reserva até 1 GB para blocos e 1 GB para a montagem; blocos antigos são descartados por uso quando necessário. Preparar uma seleção também respeita o limite total de 2 GB. O cache é removido ao fechar normalmente. Edição, desfazer/refazer e troca de projeto interrompem a reprodução; a próxima reprodução prepara somente os blocos necessários e monta a versão atual. Fechar ou cancelar encerra o processo de preparação.
 
 As listas têm ações visíveis **Remover da biblioteca** e **Remover elemento da composição**, além de Delete. Remover um clipe fecha seu intervalo e ajusta/corta as camadas nesse intervalo; remover uma camada preserva a sequência principal. Ctrl+Z desfaz. A mídia continua na biblioteca ao remover da composição; nenhum desses comandos apaga os arquivos originais.
 Há um único botão **Reproduzir/Pausar** na área do vídeo. Ele controla a mídia aberta ou a montagem quando não há mídia da biblioteca aberta. Espaço na timeline continua ativando a montagem. O nome acessível acompanha apenas a ação, e os anúncios são Reproduzindo ou Pausado. O botão permanece acessível durante a preparação, que não devolve o foco automaticamente se o usuário navegou para outro controle.

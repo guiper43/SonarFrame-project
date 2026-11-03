@@ -2,6 +2,14 @@
 
 ## Em desenvolvimento
 
+- Reprodução contínua da composição a partir do cursor ou seleção, com preparação antecipada limitada. Se faltarem dados, pausa na posição atual e retoma após recompor a reserva; pausa manual e cancelamento impedem retomada automática.
+- Montagem da prévia por cópia de vídeo e áudio PCM, eliminando a recodificação AAC integral após edições; medição da saída nativa, benchmark de latência e cancelamento interno sem anúncio redundante.
+- Recomposição incremental por intervalos da origem, com identidade audiovisual independente de nomes/IDs, cache separado de vídeo e áudio, preservação de segmentos após ripple e diagnóstico de hits, renderização, mixagem, AAC, montagem e disponibilidade da reprodução.
+- Timeline unificada: seleção e exclusão temporal na própria lista; Delete no contexto de item abre a ação de remoção. Ações de edição reunidas no menu Shift+F10, Aplicações ou botão direito, com retorno à timeline.
+- Edição acessível da timeline: Page Up/Down também na lista, preservação do foco após atualizar clipes, tipo e ordem nos nomes acessíveis, consulta completa do intervalo, confirmações de corte/exclusão e histórico sem movimentos redundantes.
+
+- Retomar a reprodução aguarda a confirmação de saída do modo mudo pelo motor de áudio antes de informar o estado Reproduzindo.
+
 - Correção dos textos de Sobre/Ajuda, cache de metadados na busca em pausa e decodificação antecipada de áudio nos recortes, com validação de junções em MP3, AAC, Vorbis e Opus.
 
 - Cache incremental da reprodução em blocos de cinco segundos: edições reaproveitam intervalos intactos e desfazer/refazer pode recuperar blocos anteriores, com descarte por uso dentro do limite de 2 GB.
