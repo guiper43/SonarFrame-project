@@ -1,5 +1,25 @@
 name: Core
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - homolog
+      - develop
+      - 'feat/**'
+      - 'feature/**'
+      - 'fix/**'
+      - 'hotfix/**'
+      - 'chore/**'
+  pull_request:
+    branches:
+      - main
+      - homolog
+      - develop
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: windows-latest
