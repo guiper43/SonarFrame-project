@@ -115,8 +115,7 @@ public partial class JanelaPrincipal
         try
         {
             await LimparPreviaAsync();
-            var executavel = Path.Combine(AppContext.BaseDirectory, "tools", "ffprobe.exe");
-            await new AcoesEdicao(sessao).ReligarAsync(id, dialogo.FileName, new LeitorMetadadosFfprobe(new ExecutorFfprobe(File.Exists(executavel) ? executavel : "ffprobe")));
+            await new AcoesEdicao(sessao).ReligarAsync(id, dialogo.FileName, leitorMetadados);
             exibirPropriedadesBiblioteca = true; Atualizar();
             Anunciar("Localização da mídia atualizada; as edições foram preservadas.");
         }

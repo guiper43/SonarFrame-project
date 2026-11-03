@@ -97,13 +97,13 @@ public sealed class TestesPreviaBiblioteca
     }
 
     [Fact]
-    public async Task FecharDuranteAberturaCancelaDescartaEIgnoraEventos()
+    public async Task FecharDuranteAberturaDescartaReprodutorEPreservaFabricaInjetada()
     {
-        var fabrica = new Fabrica { Carregar = token => Task.Delay(Timeout.Infinite, token) };
+        await using var fabrica = new Fabrica { Carregar = token => Task.Delay(Timeout.Infinite, token) };
         var previa = new PreviaBiblioteca(fabrica);
         var abertura = previa.AbrirAsync(Midia());
         await previa.DisposeAsync(); await abertura;
-        Assert.True(fabrica.Liberada); Assert.True(fabrica.Criados[0].Liberado);
+        Assert.False(fabrica.Liberada); Assert.True(fabrica.Criados[0].Liberado);
         var anterior = previa.Atual;
         fabrica.Criados[0].Emitir(new(true)); Assert.Same(anterior, previa.Atual);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => previa.AbrirAsync(Midia()));

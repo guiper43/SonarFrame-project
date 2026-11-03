@@ -260,12 +260,28 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
 
     public async ValueTask DisposeAsync()
     {
-        if (sessaoProgressiva is { } progressiva) await progressiva.DisposeAsync().ConfigureAwait(false);
-        usoCache?.Dispose(); usoCache = null;
-        if (Directory.Exists(pasta))
+        try
         {
-            foreach (var arquivo in Directory.GetFiles(pasta)) File.Delete(arquivo);
-            Directory.Delete(pasta);
+            if (sessaoProgressiva is { } progressiva) await progressiva.DisposeAsync().ConfigureAwait(false);
+            if (Directory.Exists(pasta))
+            {
+                var marcador = Path.Combine(pasta, "em-uso");
+                foreach (var arquivo in Directory.GetFiles(pasta).Where(a => !string.Equals(a, marcador, StringComparison.OrdinalIgnoreCase)))
+                    File.Delete(arquivo);
+            }
         }
+        finally
+        {
+            usoCache?.Dispose(); usoCache = null;
+        }
+        try
+        {
+            if (Directory.Exists(pasta))
+            {
+                foreach (var arquivo in Directory.GetFiles(pasta)) File.Delete(arquivo);
+                Directory.Delete(pasta);
+            }
+        }
+        catch (IOException) { }
     }
 }

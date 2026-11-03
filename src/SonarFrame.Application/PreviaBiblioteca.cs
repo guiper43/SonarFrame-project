@@ -181,6 +181,6 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
     public async ValueTask DisposeAsync()
     {
         lock (bloqueio) { if (encerrada) return; encerrada = true; }
-        await LimparAsync(); await fabrica.DisposeAsync();
+        await LimparAsync();
     }
 }

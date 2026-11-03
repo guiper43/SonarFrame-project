@@ -24,11 +24,9 @@ public partial class JanelaPrincipal
     private bool cancelamentoExplicitoComposicao;
     internal Task UltimaOperacaoComposicao { get; private set; } = Task.CompletedTask;
 
-    private void ConfigurarComposicao(IPreparadorComposicao? preparador = null)
+    private void ConfigurarComposicao(IPreparadorComposicao preparador)
     {
-        preparadorComposicao = preparador ?? new PreparadorComposicaoFfmpeg(
-            Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe"),
-            new ExecutorFfprobe(Path.Combine(AppContext.BaseDirectory, "tools", "ffprobe.exe")));
+        preparadorComposicao = preparador;
     }
 
     private void AlternarComposicao(object sender, RoutedEventArgs e) => UltimaOperacaoComposicao = ReproduzirComposicaoAsync(false);

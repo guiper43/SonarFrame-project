@@ -13,19 +13,28 @@ namespace SonarFrame.Desktop;
 
 internal sealed record DiagnosticoSaida(long? PrimeiroQuadro, long? PrimeiroAudio, double InicializacaoLibVlcMs);
 
-internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaReprodutorMidia
+internal sealed class FabricaPreviaVlc : IFabricaReprodutorMidia
 {
     private readonly Lazy<Task<LibVLC>> biblioteca = new(() => Task.Run(() => new LibVLC("--no-video-title-show", "--no-osd", "--no-spu")));
     private ReprodutorMidiaVlc? ultimo;
     internal Task<DiagnosticoSaida>? Saida => ultimo?.Saida;
+    private ContentControl? superficie;
+    private int descartada;
+
+    public FabricaPreviaVlc() { }
+
+    internal FabricaPreviaVlc(ContentControl superficie) => this.superficie = superficie;
+
+    internal void AssociarSuperficie(ContentControl destino) => superficie = destino;
 
     public async Task<IReprodutorMidia> CriarAsync(Midia midia, CancellationToken token)
         => await CriarAsync(midia, null, token);
 
     public async Task<IReprodutorMidia> CriarAsync(Midia midia, IFonteComposicao? fonte, CancellationToken token)
     {
+        var destino = superficie ?? throw new InvalidOperationException("Superfície de prévia não configurada.");
         if (fonte is null && !File.Exists(midia.Caminho)) throw new FileNotFoundException("Arquivo ausente. Use Localizar arquivo na biblioteca.");
-        if (midia.Tipo == TipoMidia.Imagem) return new PreviaImagem(superficie, midia.Caminho);
+        if (midia.Tipo == TipoMidia.Imagem) return new PreviaImagem(destino, midia.Caminho);
         var inicializacao = Stopwatch.StartNew();
         LibVLC motor;
         try { motor = await biblioteca.Value.WaitAsync(token); }
@@ -34,13 +43,13 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         token.ThrowIfCancellationRequested();
         var player = await Task.Run(() => new LibVLCSharp.Shared.MediaPlayer(motor)
         { EnableKeyInput = false, EnableMouseInput = false, EnableHardwareDecoding = false });
-        ultimo = new ReprodutorMidiaVlc(superficie, motor, player, midia, inicializacao.Elapsed.TotalMilliseconds, fonte);
+        ultimo = new ReprodutorMidiaVlc(destino, motor, player, midia, inicializacao.Elapsed.TotalMilliseconds, fonte);
         return fonte is null ? ultimo : new ReprodutorComposicao(ultimo, fonte);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (!biblioteca.IsValueCreated) return;
+        if (Interlocked.Exchange(ref descartada, 1) != 0 || !biblioteca.IsValueCreated) return;
         LibVLC motor;
         try { motor = await biblioteca.Value; }
         catch { return; }
