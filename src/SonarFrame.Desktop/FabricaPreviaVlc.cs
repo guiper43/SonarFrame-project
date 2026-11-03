@@ -11,14 +11,22 @@ using SonarFrame.Core;
 
 namespace SonarFrame.Desktop;
 
+internal sealed record DiagnosticoSaida(long? PrimeiroQuadro, long? PrimeiroAudio, double InicializacaoLibVlcMs);
+
 internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaReprodutorMidia
 {
     private readonly Lazy<Task<LibVLC>> biblioteca = new(() => Task.Run(() => new LibVLC("--no-video-title-show", "--no-osd", "--no-spu")));
+    private ReprodutorMidiaVlc? ultimo;
+    internal Task<DiagnosticoSaida>? Saida => ultimo?.Saida;
 
     public async Task<IReprodutorMidia> CriarAsync(Midia midia, CancellationToken token)
+        => await CriarAsync(midia, null, token);
+
+    public async Task<IReprodutorMidia> CriarAsync(Midia midia, IFonteComposicao? fonte, CancellationToken token)
     {
-        if (!File.Exists(midia.Caminho)) throw new FileNotFoundException("Arquivo ausente. Use Localizar arquivo na biblioteca.");
+        if (fonte is null && !File.Exists(midia.Caminho)) throw new FileNotFoundException("Arquivo ausente. Use Localizar arquivo na biblioteca.");
         if (midia.Tipo == TipoMidia.Imagem) return new PreviaImagem(superficie, midia.Caminho);
+        var inicializacao = Stopwatch.StartNew();
         LibVLC motor;
         try { motor = await biblioteca.Value.WaitAsync(token); }
         catch (OperationCanceledException) { throw; }
@@ -26,7 +34,8 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         token.ThrowIfCancellationRequested();
         var player = await Task.Run(() => new LibVLCSharp.Shared.MediaPlayer(motor)
         { EnableKeyInput = false, EnableMouseInput = false, EnableHardwareDecoding = false });
-        return new ReprodutorMidiaVlc(superficie, motor, player, midia);
+        ultimo = new ReprodutorMidiaVlc(superficie, motor, player, midia, inicializacao.Elapsed.TotalMilliseconds, fonte);
+        return fonte is null ? ultimo : new ReprodutorComposicao(ultimo, fonte);
     }
 
     public async ValueTask DisposeAsync()
@@ -74,9 +83,15 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         private readonly Midia midia;
         private VideoView? video;
         private Media? arquivo;
+        private readonly IFonteComposicao? fonte;
+        private EntradaComposicaoVlc? entrada;
         private volatile bool falhou;
         private bool liberado;
         private long posicaoSolicitada = -1;
+        private readonly double inicializacaoMs;
+        private bool inicializacaoRegistrada;
+        private CancellationTokenSource? observacao;
+        internal Task<DiagnosticoSaida>? Saida { get; private set; }
         public event Action<EventoReprodutor>? Alterado;
         public TempoMidia Posicao
         {
@@ -88,8 +103,10 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
             }
         }
 
-        public ReprodutorMidiaVlc(ContentControl superficie, LibVLC biblioteca, LibVLCSharp.Shared.MediaPlayer player, Midia midia)
+        public ReprodutorMidiaVlc(ContentControl superficie, LibVLC biblioteca, LibVLCSharp.Shared.MediaPlayer player, Midia midia, double inicializacaoMs, IFonteComposicao? fonte = null)
         {
+            this.fonte = fonte;
+            this.inicializacaoMs = inicializacaoMs;
             this.superficie = superficie; this.biblioteca = biblioteca; this.player = player; this.midia = midia;
             player.EndReached += AoConcluir; player.EncounteredError += AoFalhar;
             player.TimeChanged += AoAtualizarTempo;
@@ -115,7 +132,14 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
                 }
                 else superficie.Content = null;
             }, System.Windows.Threading.DispatcherPriority.Normal, token);
-            arquivo = new Media(biblioteca, midia.Caminho, FromType.FromPath);
+            if (fonte is null) arquivo = new Media(biblioteca, midia.Caminho, FromType.FromPath);
+            else
+            {
+                entrada = new EntradaComposicaoVlc(fonte.AbrirLeitura());
+                arquivo = new Media(biblioteca, entrada);
+                arquivo.AddOption(":demux=avformat");
+                arquivo.AddOption(":clock-synchro=0");
+            }
             if (midia.Tipo == TipoMidia.Audio) arquivo.AddOption(":no-video");
             if (!await Task.Run(() => player.Play(arquivo), token)) throw new InvalidOperationException("O motor rejeitou a mídia.");
             await EsperarAsync(() => player.State is VLCState.Playing or VLCState.Ended, token);
@@ -124,13 +148,46 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
 
         private async Task ReproduzirAsync(CancellationToken token, bool restaurarAudio)
         {
+            await EncerrarObservacaoAsync();
+            var anteriores = arquivo?.Statistics ?? default;
             if (player.State is VLCState.Ended or VLCState.Stopped)
             {
                 if (!await Task.Run(() => player.Play(arquivo!), token)) throw new InvalidOperationException("Não foi possível reiniciar a mídia.");
             }
             else await Task.Run(() => player.SetPause(false), token);
             await EsperarAsync(() => player.State is VLCState.Playing or VLCState.Ended, token);
-            if (restaurarAudio) player.Mute = false;
+            if (restaurarAudio)
+            {
+                player.Mute = false;
+                await EsperarAsync(() => !player.Mute, token);
+                observacao = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                Saida = ObservarSaidaAsync(anteriores, inicializacaoRegistrada ? 0 : inicializacaoMs, observacao.Token);
+                inicializacaoRegistrada = true;
+            }
+        }
+        private async Task<DiagnosticoSaida> ObservarSaidaAsync(MediaStats anteriores, double criacaoMs, CancellationToken token)
+        {
+            long? quadro = null, audio = null;
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    var atual = arquivo!.Statistics;
+                    if (atual.DisplayedPictures > anteriores.DisplayedPictures) quadro ??= Stopwatch.GetTimestamp();
+                    if (atual.PlayedAudioBuffers > anteriores.PlayedAudioBuffers) audio ??= Stopwatch.GetTimestamp();
+                    if (audio.HasValue && (quadro.HasValue || midia.Tipo == TipoMidia.Audio)) break;
+                    await Task.Delay(10, token);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            return new(quadro, audio, criacaoMs);
+        }
+        private async Task EncerrarObservacaoAsync()
+        {
+            if (observacao is null) return;
+            observacao.Cancel();
+            if (Saida is not null) await Saida;
+            observacao.Dispose(); observacao = null;
         }
         public async Task CarregarPausadoAsync(CancellationToken token)
         {
@@ -140,12 +197,19 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         }
         public async Task PausarAsync(CancellationToken token)
         {
+            await EncerrarObservacaoAsync();
             if (player.State is VLCState.Paused or VLCState.Ended or VLCState.Stopped) return;
             await Task.Run(() => player.SetPause(true), token);
             await EsperarAsync(() => player.State is VLCState.Paused or VLCState.Ended, token);
         }
         public async Task PosicionarAsync(TempoMidia posicao, CancellationToken token)
         {
+            if (fonte is not null)
+            {
+                token.ThrowIfCancellationRequested();
+                if (posicao == TempoMidia.Zero) return;
+                throw new InvalidOperationException("Reabra a composição na posição solicitada.");
+            }
             var mutado = player.Mute;
             try
             {
@@ -172,6 +236,7 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
         public async ValueTask DisposeAsync()
         {
             if (liberado) return;
+            await EncerrarObservacaoAsync();
             liberado = true; player.EndReached -= AoConcluir; player.EncounteredError -= AoFalhar;
             player.TimeChanged -= AoAtualizarTempo;
             await Task.Run(player.Stop);
@@ -180,7 +245,7 @@ internal sealed class FabricaPreviaVlc(ContentControl superficie) : IFabricaRepr
                 if (video is not null) { video.MediaPlayer = null; video.Dispose(); }
                 if (ReferenceEquals(superficie.Content, video)) superficie.Content = null;
             });
-            await Task.Run(() => { player.Dispose(); arquivo?.Dispose(); });
+            await Task.Run(() => { player.Dispose(); arquivo?.Dispose(); entrada?.Dispose(); });
         }
     }
 }

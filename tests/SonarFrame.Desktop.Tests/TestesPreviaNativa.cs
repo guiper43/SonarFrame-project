@@ -71,10 +71,22 @@ public sealed class TestesPreviaNativa
         await janela.ReproduzirComposicaoAsync(false);
         Assert.Equal(EstadoPrevia.Pausada, janela.PreviaAtual.Atual.Estado);
         var view = Assert.IsType<LibVLCSharp.WPF.VideoView>(janela.SuperficiePrevia.Content);
-        view.MediaPlayer!.Mute = true;
-        await janela.ReproduzirComposicaoAsync(false);
-        Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
-        Assert.False(view.MediaPlayer.Mute);
+        var player = view.MediaPlayer!;
+        for (var repeticao = 0; repeticao < 3; repeticao++)
+        {
+            Assert.Equal(EstadoPrevia.Pausada, janela.PreviaAtual.Atual.Estado);
+            player.Mute = true;
+            var limite = DateTime.UtcNow.AddSeconds(5);
+            while (!player.Mute && DateTime.UtcNow < limite) await Task.Delay(25);
+            Assert.True(player.Mute);
+            await janela.ReproduzirComposicaoAsync(false);
+            Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
+            Assert.Same(view, janela.SuperficiePrevia.Content);
+            Assert.False(player.Mute);
+            await Task.Delay(50);
+            Assert.False(player.Mute);
+            await janela.ReproduzirComposicaoAsync(false);
+        }
         await janela.LimparPreviaAsync();
     }, prazoSegundos: 180);
 

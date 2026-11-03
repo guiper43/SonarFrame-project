@@ -38,7 +38,8 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
     public Task<bool> EstaAtualizadaAsync(Projeto projeto, CancellationToken token) => Task.Run(() =>
     {
         token.ThrowIfCancellationRequested();
-        return preparada is not null && File.Exists(preparada.Caminho) && Chave(projeto) == chaveAtual;
+        return preparada is not null && File.Exists(preparada.Caminho) && Chave(projeto) == chaveAtual
+            || sessaoProgressiva?.EstaAtualizada(projeto) == true;
     }, token);
 
     private async Task RenderizarBlocoAsync(Projeto projeto, Dictionary<Guid, Metadados> metadados,
@@ -257,14 +258,14 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         catch (Win32Exception ex) { throw new InvalidOperationException("Não foi possível iniciar a reprodução. Verifique se o FFmpeg acompanha a instalação do sonarFrame.", ex); }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        if (sessaoProgressiva is { } progressiva) await progressiva.DisposeAsync().ConfigureAwait(false);
         usoCache?.Dispose(); usoCache = null;
         if (Directory.Exists(pasta))
         {
             foreach (var arquivo in Directory.GetFiles(pasta)) File.Delete(arquivo);
             Directory.Delete(pasta);
         }
-        return ValueTask.CompletedTask;
     }
 }

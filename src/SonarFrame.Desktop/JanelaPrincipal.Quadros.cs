@@ -108,7 +108,7 @@ public partial class JanelaPrincipal
             if (versao != geracaoNavegacao || !ReferenceEquals(origem, sessao)) return;
             if (intervaloPreparado)
             {
-                await previa.LimparAsync(); intervaloPreparado = false; inicioArquivoComposicao = TempoMidia.Zero;
+                await previa.LimparAsync(); intervaloPreparado = false; composicaoProgressiva = false; inicioArquivoComposicao = TempoMidia.Zero;
             }
             fimReproducaoSelecao = null;
             if (composicaoAtiva && previa.Atual.Midia?.Duracao is { } duracao)

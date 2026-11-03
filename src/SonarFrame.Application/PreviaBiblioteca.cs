@@ -4,7 +4,7 @@ namespace SonarFrame.Application;
 
 public enum EstadoPrevia { Vazia, Preparando, Imagem, Reproduzindo, Pausada, Concluida, Erro }
 public sealed record SituacaoPrevia(EstadoPrevia Estado, Midia? Midia = null, string? Mensagem = null);
-public sealed record EventoReprodutor(bool Concluido, string? Erro = null);
+public sealed record EventoReprodutor(bool Concluido, string? Erro = null, EstadoPrevia? Estado = null);
 
 public interface IReprodutorMidia : IAsyncDisposable
 {
@@ -20,6 +20,8 @@ public interface IReprodutorMidia : IAsyncDisposable
 public interface IFabricaReprodutorMidia : IAsyncDisposable
 {
     Task<IReprodutorMidia> CriarAsync(Midia midia, CancellationToken token);
+    Task<IReprodutorMidia> CriarAsync(Midia midia, IFonteComposicao fonte, CancellationToken token)
+        => throw new NotSupportedException("Este motor não suporta reprodução progressiva.");
 }
 
 public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDisposable
@@ -46,7 +48,7 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
         Alterado?.Invoke(situacao);
     }
 
-    public async Task AbrirAsync(Midia midia, TempoMidia? posicaoInicial = null, bool reproduzir = true)
+    public async Task AbrirAsync(Midia midia, TempoMidia? posicaoInicial = null, bool reproduzir = true, IFonteComposicao? fonte = null)
     {
         CancellationTokenSource token;
         long versao;
@@ -63,7 +65,7 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
         {
             token.Token.ThrowIfCancellationRequested();
             await LiberarReprodutorAsync();
-            var novo = await fabrica.CriarAsync(midia, token.Token);
+            var novo = fonte is null ? await fabrica.CriarAsync(midia, token.Token) : await fabrica.CriarAsync(midia, fonte, token.Token);
             criado = novo;
             lock (bloqueio) reprodutor = novo;
             novo.Alterado += evento =>
@@ -71,6 +73,7 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
                 lock (bloqueio) { if (versao != geracao || encerrada) return; eventosMotor++; }
                 if (evento.Erro is not null) Publicar(versao, new(EstadoPrevia.Erro, midia, evento.Erro));
                 else if (evento.Concluido) Publicar(versao, new(EstadoPrevia.Concluida, midia));
+                else if (evento.Estado is { } estado) Publicar(versao, new(estado, midia, estado == EstadoPrevia.Preparando ? "Carregando vídeo. A reprodução continuará desta posição." : null));
             };
             if (midia.Tipo == TipoMidia.Imagem) await novo.CarregarAsync(token.Token);
             else await novo.CarregarPausadoAsync(token.Token);
@@ -83,11 +86,13 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             if (criado is not null || versao == Interlocked.Read(ref geracao)) await LiberarReprodutorAsync();
+            if (criado is null && fonte is not null) await fonte.DisposeAsync();
             Publicar(versao, new(EstadoPrevia.Vazia, Mensagem: "Prévia cancelada."));
         }
         catch (Exception erro)
         {
             if (criado is not null) await LiberarReprodutorAsync();
+            else if (fonte is not null) await fonte.DisposeAsync();
             Publicar(versao, new(EstadoPrevia.Erro, midia, erro.Message));
         }
         finally
@@ -108,7 +113,7 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
 
     public Task PausarAsync() => ComReprodutorAsync(async (motor, situacao, token) =>
     {
-        if (situacao.Estado != EstadoPrevia.Reproduzindo) return situacao.Estado;
+        if (situacao.Estado is not (EstadoPrevia.Reproduzindo or EstadoPrevia.Preparando)) return situacao.Estado;
         await motor.PausarAsync(token); return EstadoPrevia.Pausada;
     });
 
@@ -126,20 +131,31 @@ public sealed class PreviaBiblioteca(IFabricaReprodutorMidia fabrica) : IAsyncDi
     {
         var versao = Interlocked.Read(ref geracao);
         await operacoes.WaitAsync();
+        CancellationTokenSource? cancelamento = null;
         try
         {
-            if (versao != geracao || encerrada || reprodutor is null || Atual.Estado is not (EstadoPrevia.Reproduzindo or EstadoPrevia.Pausada or EstadoPrevia.Concluida)) return;
+            lock (bloqueio)
+            {
+                if (versao != geracao || encerrada || reprodutor is null || atual.Estado is not (EstadoPrevia.Reproduzindo or EstadoPrevia.Pausada or EstadoPrevia.Concluida or EstadoPrevia.Preparando)) return;
+                cancelamento = new CancellationTokenSource();
+                carregamento = cancelamento;
+            }
             var situacao = Atual;
             var eventosAntes = Interlocked.Read(ref eventosMotor);
-            var estado = await acao(reprodutor, situacao, CancellationToken.None);
+            var estado = await acao(reprodutor, situacao, cancelamento.Token);
             if (eventosAntes == Interlocked.Read(ref eventosMotor)) Publicar(versao, situacao with { Estado = estado, Mensagem = null });
         }
+        catch (OperationCanceledException) when (cancelamento?.IsCancellationRequested == true) { }
         catch (ArgumentException erro) { Publicar(versao, Atual with { Mensagem = erro.Message }); }
         catch (Exception erro)
         {
             await LiberarReprodutorAsync(); Publicar(versao, Atual with { Estado = EstadoPrevia.Erro, Mensagem = erro.Message });
         }
-        finally { operacoes.Release(); }
+        finally
+        {
+            lock (bloqueio) { if (ReferenceEquals(carregamento, cancelamento)) carregamento = null; }
+            cancelamento?.Dispose(); operacoes.Release();
+        }
     }
 
     public async Task LimparAsync()

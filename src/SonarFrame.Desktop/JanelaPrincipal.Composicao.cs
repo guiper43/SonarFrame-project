@@ -1,4 +1,6 @@
 using System.IO;
+using System.Diagnostics;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using SonarFrame.Application;
@@ -18,6 +20,7 @@ public partial class JanelaPrincipal
     private TempoMidia? destinoManualComposicao;
     private TempoMidia inicioArquivoComposicao;
     private bool intervaloPreparado;
+    private bool composicaoProgressiva;
     private bool cancelamentoExplicitoComposicao;
     internal Task UltimaOperacaoComposicao { get; private set; } = Task.CompletedTask;
 
@@ -34,6 +37,7 @@ public partial class JanelaPrincipal
     {
         cancelamentoExplicitoComposicao = true;
         preparacaoComposicao?.Cancel(); navegacaoTemporal?.Cancel(); buscaQuadro?.Cancel(); previa.Cancelar();
+        if (preparacaoComposicao is null && composicaoProgressiva) UltimaOperacaoComposicao = InterromperComposicaoAsync(true);
     }
     private void PararComposicao(object sender, RoutedEventArgs e) => UltimaOperacaoComposicao = PararComposicaoAsync();
 
@@ -41,6 +45,10 @@ public partial class JanelaPrincipal
     {
         if (sessao is null || Ocupado || previaEncerrada) return;
         if (preparacaoComposicao is not null) { Anunciar("Carregando vídeo. Você pode cancelar."); return; }
+        if (composicaoProgressiva && previa.Atual.Estado == EstadoPrevia.Preparando && !selecao)
+        {
+            await previa.PausarAsync(); SincronizarCursorComposicao(); return;
+        }
         navegacaoTemporal?.Cancel(); geracaoNavegacao++; navegandoTemporal = false;
         if (composicaoAtiva && previa.Atual.Estado == EstadoPrevia.Reproduzindo && !selecao)
         {
@@ -55,11 +63,23 @@ public partial class JanelaPrincipal
         cancelamentoExplicitoComposicao = false;
         var finalizada = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         preparacaoFinalizada = finalizada;
+        var disponibilidade = Stopwatch.StartNew();
+        var inicioMedicao = Stopwatch.GetTimestamp();
+        var executouPreparacao = false;
+        DiagnosticoPreparacao? diagnosticoPreparacao = null;
+        double intervaloMs = 0;
+        IFonteComposicao? fonte = null;
         try
         {
             OcultarQuadro();
             await UltimoQuadro;
             destinoManualComposicao = null;
+            if (composicaoProgressiva && previa.Atual.Estado == EstadoPrevia.Pausada && !selecao
+                && fimReproducaoSelecao is null && snapshot.Cursor == inicioArquivoComposicao + previa.Posicao
+                && await preparadorComposicao.EstaAtualizadaAsync(snapshot, cancelamento.Token))
+            {
+                await previa.AlternarAsync(); cancelamento.Token.ThrowIfCancellationRequested(); return;
+            }
             if (composicaoAtiva && previa.Atual.Estado is EstadoPrevia.Pausada or EstadoPrevia.Concluida && !selecao && !intervaloPreparado
                 && await preparadorComposicao.EstaAtualizadaAsync(snapshot, cancelamento.Token))
             {
@@ -74,7 +94,7 @@ public partial class JanelaPrincipal
                 return;
             }
             await previa.LimparAsync();
-            inicioArquivoComposicao = TempoMidia.Zero; intervaloPreparado = false;
+            inicioArquivoComposicao = TempoMidia.Zero; intervaloPreparado = false; composicaoProgressiva = false;
             composicaoAtiva = true;
             fimReproducaoSelecao = selecao ? snapshot.Selecao!.Fim : null;
             AtualizarControlesPrevia();
@@ -83,17 +103,31 @@ public partial class JanelaPrincipal
             {
                 if (ReferenceEquals(preparacaoComposicao, cancelamento) && !cancelamento.IsCancellationRequested && Situacao.Text != mensagem) Anunciar(mensagem);
             });
-            var midia = await preparadorComposicao.PrepararAsync(snapshot, progresso, cancelamento.Token);
-            if (selecao && await preparadorComposicao.PrepararIntervaloAsync(snapshot, snapshot.Selecao!.Inicio, snapshot.Selecao.Fim, cancelamento.Token) is { } intervalo)
+            executouPreparacao = true;
+            var inicio = selecao ? snapshot.Selecao!.Inicio : snapshot.Cursor >= snapshot.Duracao ? TempoMidia.Zero : snapshot.Cursor;
+            fonte = await preparadorComposicao.IniciarReproducaoAsync(snapshot, inicio, selecao ? snapshot.Selecao!.Fim : snapshot.Duracao, progresso, cancelamento.Token);
+            var midia = fonte is null ? await preparadorComposicao.PrepararAsync(snapshot, progresso, cancelamento.Token)
+                : new Midia(Guid.NewGuid(), "Composição", "", TipoMidia.Video, selecao ? fonte.Duracao : snapshot.Duracao, new(30, 1));
+            if (fonte is not null) { composicaoProgressiva = true; intervaloPreparado = true; inicioArquivoComposicao = fonte.Inicio; }
+            diagnosticoPreparacao = (preparadorComposicao as PreparadorComposicaoFfmpeg)?.UltimoDiagnostico;
+            if (selecao && fonte is null)
             {
-                midia = intervalo; intervaloPreparado = true; inicioArquivoComposicao = snapshot.Selecao.Inicio;
+                var relogioIntervalo = Stopwatch.StartNew();
+                try
+                {
+                    if (await preparadorComposicao.PrepararIntervaloAsync(snapshot, snapshot.Selecao!.Inicio, snapshot.Selecao.Fim, cancelamento.Token) is { } intervalo)
+                    {
+                        midia = intervalo; intervaloPreparado = true; inicioArquivoComposicao = snapshot.Selecao.Inicio;
+                    }
+                }
+                finally { intervaloMs = relogioIntervalo.Elapsed.TotalMilliseconds; }
             }
             cancelamento.Token.ThrowIfCancellationRequested();
             if (!ReferenceEquals(origem, sessao)) return;
-            var inicio = selecao ? snapshot.Selecao!.Inicio : snapshot.Cursor >= snapshot.Duracao ? TempoMidia.Zero : snapshot.Cursor;
             origem.Posicionar(inicio, reproducao: true);
             using var registro = cancelamento.Token.Register(previa.Cancelar);
-            await previa.AbrirAsync(midia, inicio - inicioArquivoComposicao);
+            await previa.AbrirAsync(midia, inicio - inicioArquivoComposicao, fonte: fonte);
+            fonte = null;
             cancelamento.Token.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException)
@@ -107,16 +141,56 @@ public partial class JanelaPrincipal
         }
         finally
         {
+            if (fonte is not null) await fonte.DisposeAsync();
+            disponibilidade.Stop();
+            if (preparadorComposicao is PreparadorComposicaoFfmpeg medido)
+            {
+                var diagnostico = new
+                {
+                    DataUtc = DateTime.UtcNow,
+                    Disponivel = previa.Atual.Estado == EstadoPrevia.Reproduzindo,
+                    TempoAteComandoConcluidoMs = disponibilidade.Elapsed.TotalMilliseconds,
+                    PreparacaoIntervaloMs = intervaloMs,
+                    PreparacaoExecutada = executouPreparacao,
+                    Preparacao = executouPreparacao ? diagnosticoPreparacao ?? medido.UltimoDiagnostico : null
+                };
+                try
+                {
+                    var diretorio = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sonarFrame");
+                    Directory.CreateDirectory(diretorio);
+                    _ = RegistrarSaidaAsync(diretorio, diagnostico, inicioMedicao, previa.Atual.Estado == EstadoPrevia.Reproduzindo ? SaidaNativa : null);
+                }
+                catch (Exception erro) when (erro is IOException or UnauthorizedAccessException) { Debug.WriteLine(erro.Message); }
+            }
             preparacaoComposicao = null;
             finalizada.TrySetResult();
             AtualizarControlesPrevia(); AtualizarPosicaoPrevia();
         }
     }
 
+    private static async Task RegistrarSaidaAsync(string diretorio, object comando, long inicio, Task<DiagnosticoSaida>? observacao)
+    {
+        try
+        {
+            var saida = observacao is null ? null : await observacao;
+            double? Decorrido(long? instante) => instante is { } valor && valor >= inicio ? Stopwatch.GetElapsedTime(inicio, valor).TotalMilliseconds : null;
+            var diagnostico = new
+            {
+                Comando = comando,
+                InicializacaoLibVlcMs = saida?.InicializacaoLibVlcMs,
+                PrimeiroQuadroApresentadoMs = Decorrido(saida?.PrimeiroQuadro),
+                PrimeiroBufferAudioMs = Decorrido(saida?.PrimeiroAudio)
+            };
+            await File.WriteAllTextAsync(Path.Combine(diretorio, "diagnostico-reproducao.json"), JsonSerializer.Serialize(diagnostico, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception erro) when (erro is IOException or UnauthorizedAccessException) { Debug.WriteLine(erro.Message); }
+    }
+
     internal void SincronizarCursorComposicao()
     {
         if (!composicaoAtiva || sessao is null || preparacaoComposicao is not null || navegandoTemporal) return;
-        if (previa.Atual.Estado is not (EstadoPrevia.Reproduzindo or EstadoPrevia.Pausada or EstadoPrevia.Concluida)) return;
+        if (previa.Atual.Estado is not (EstadoPrevia.Reproduzindo or EstadoPrevia.Pausada or EstadoPrevia.Concluida)
+            && !(composicaoProgressiva && previa.Atual.Estado == EstadoPrevia.Preparando)) return;
         var posicao = previa.Atual.Estado == EstadoPrevia.Concluida ? intervaloPreparado && fimReproducaoSelecao is { } final ? final : sessao.Atual.Duracao
             : previa.Atual.Estado == EstadoPrevia.Pausada && destinoManualComposicao is { } manual ? manual
             : TempoMidia.Minimo(inicioArquivoComposicao + previa.Posicao, sessao.Atual.Duracao);
@@ -150,7 +224,7 @@ public partial class JanelaPrincipal
         navegacaoTemporal?.Cancel(); geracaoNavegacao++; navegandoTemporal = false;
         fimReproducaoSelecao = null;
         destinoManualComposicao = TempoMidia.Zero;
-        if (intervaloPreparado) { await previa.LimparAsync(); intervaloPreparado = false; inicioArquivoComposicao = TempoMidia.Zero; }
+        if (intervaloPreparado) { await previa.LimparAsync(); intervaloPreparado = false; composicaoProgressiva = false; inicioArquivoComposicao = TempoMidia.Zero; }
         else await previa.PararAsync();
         sessao.Posicionar(TempoMidia.Zero, reproducao: true);
         UltimoQuadro = ExibirQuadroAsync(TempoMidia.Zero); await UltimoQuadro;
@@ -170,7 +244,7 @@ public partial class JanelaPrincipal
         if (limpar)
         {
             await previa.LimparAsync(); composicaoAtiva = false; destinoManualComposicao = null;
-            fimReproducaoSelecao = null; intervaloPreparado = false; inicioArquivoComposicao = TempoMidia.Zero;
+            fimReproducaoSelecao = null; intervaloPreparado = false; composicaoProgressiva = false; inicioArquivoComposicao = TempoMidia.Zero;
         }
     }
 

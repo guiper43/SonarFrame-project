@@ -10,6 +10,8 @@ namespace SonarFrame.Desktop;
 public partial class JanelaPrincipal
 {
     private PreviaBiblioteca previa = null!;
+    private FabricaPreviaVlc? fabricaNativa;
+    internal Task<DiagnosticoSaida>? SaidaNativa => fabricaNativa?.Saida;
     private readonly DispatcherTimer relogioPrevia = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private bool comandoPreviaEmAndamento;
     private bool previaEncerrada;
@@ -18,7 +20,8 @@ public partial class JanelaPrincipal
 
     private void ConfigurarPrevia(IFabricaReprodutorMidia? fabrica)
     {
-        previa = new PreviaBiblioteca(fabrica ?? new FabricaPreviaVlc(SuperficiePrevia));
+        fabricaNativa = fabrica is null ? new FabricaPreviaVlc(SuperficiePrevia) : null;
+        previa = new PreviaBiblioteca(fabrica ?? fabricaNativa!);
         previa.Alterado += PreviaAlterada;
         relogioPrevia.Tick += (_, _) => AtualizarPosicaoPrevia();
     }
@@ -66,7 +69,8 @@ public partial class JanelaPrincipal
         var temporal = !comandoPreviaEmAndamento && (estado is EstadoPrevia.Reproduzindo or EstadoPrevia.Pausada or EstadoPrevia.Concluida
             || composicaoAtiva && sessao?.Atual.LinhaDoTempo.Length > 0 && preparacaoComposicao is null);
         BotaoReproduzirPrevia.IsEnabled = BotaoPararPrevia.IsEnabled = BotaoBuscarPrevia.IsEnabled = DestinoPrevia.IsEnabled = temporal;
-        BotaoReproduzirPrevia.Content = estado == EstadoPrevia.Reproduzindo ? "Pausar" : "Reproduzir";
+        BotaoReproduzirPrevia.Content = estado == EstadoPrevia.Reproduzindo
+            || composicaoProgressiva && estado == EstadoPrevia.Preparando && preparacaoComposicao is null ? "Pausar" : "Reproduzir";
         BotaoCancelarPrevia.IsEnabled = estado == EstadoPrevia.Preparando;
         BotaoAbrirPrevia.IsEnabled = sessao is not null && Biblioteca.SelectedItems.Count == 1 && !previaEncerrada;
         var podeReproduzirVideo = sessao?.Atual.LinhaDoTempo.Length > 0 && !previaEncerrada;
@@ -74,7 +78,8 @@ public partial class JanelaPrincipal
         System.Windows.Automation.AutomationProperties.SetName(BotaoReproduzirPrevia, BotaoReproduzirPrevia.Content.ToString());
         BotaoPararComposicao.IsEnabled = composicaoAtiva && temporal && preparacaoComposicao is null;
         BotaoReproduzirSelecao.IsEnabled = podeReproduzirVideo && preparacaoComposicao is null && sessao?.Atual.Selecao is { } selecao && selecao.Inicio < selecao.Fim;
-        BotaoCancelarComposicao.IsEnabled = preparacaoComposicao is not null || navegacaoTemporal is not null || buscaQuadro is not null;
+        BotaoCancelarComposicao.IsEnabled = preparacaoComposicao is not null || navegacaoTemporal is not null || buscaQuadro is not null
+            || composicaoProgressiva && estado == EstadoPrevia.Preparando;
     }
 
     private void AtualizarPosicaoPrevia()
@@ -125,7 +130,11 @@ public partial class JanelaPrincipal
         if (composicaoAtiva) PararComposicao(sender, e);
         else UltimaOperacaoPrevia = ExecutarComandoPreviaAsync(previa.PararAsync);
     }
-    private void CancelarPrevia(object sender, RoutedEventArgs e) { previa.Cancelar(); BotaoPrevia.Focus(); }
+    private void CancelarPrevia(object sender, RoutedEventArgs e)
+    {
+        if (composicaoAtiva) CancelarPreparacaoComposicao(sender, e); else previa.Cancelar();
+        BotaoPrevia.Focus();
+    }
     private void BuscarPrevia(object sender, RoutedEventArgs e)
     {
         if (!decimal.TryParse(DestinoPrevia.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out var segundos) || segundos < 0 || segundos > 864000)

@@ -185,10 +185,4 @@ public sealed partial class PreparadorComposicaoFfmpeg
             tamanho -= bytes;
         }
     }
-    private string CaminhoBloco(Projeto bloco, int largura, int altura, bool audio)
-    {
-        var identidade = JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 2, Largura = audio ? 0 : largura, Altura = audio ? 0 : altura, Conteudo = ChaveConteudo(bloco, audio) });
-        return Path.Combine(pasta, "bloco-" + (audio ? "audio-" : "video-") + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(identidade)) + ".nut");
-    }
-
 }
