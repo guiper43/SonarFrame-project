@@ -41,15 +41,17 @@ public sealed class TestesPreparacaoComposicao
             Assert.Equal(new[] { "Carregando vídeo: 0%.", "Carregando vídeo: 30%.", "Carregando vídeo: 60%.", "Carregando vídeo: 90%.", "Carregando vídeo: 95%.", "Carregando vídeo: 100%." }, progresso.Mensagens);
             var blocos = Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut")
                 .ToDictionary(c => c, File.GetLastWriteTimeUtc);
-            Assert.Equal(3, blocos.Count);
+            Assert.Equal(5, blocos.Count);
             var editado = projeto with { Camadas = [projeto.Camadas[0] with { Clipe = projeto.Camadas[0].Clipe with { Volume = 0 } }] };
             progresso.Mensagens.Clear();
             await preparador.PrepararAsync(editado, progresso, CancellationToken.None);
-            Assert.Equal(4, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
+            Assert.Equal(6, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
+            Assert.Equal(0, preparador.UltimoDiagnostico!.VideosRenderizados);
+            Assert.Equal(1, preparador.UltimoDiagnostico.AudiosRenderizados);
             Assert.All(blocos, b => Assert.Equal(b.Value, File.GetLastWriteTimeUtc(b.Key)));
             progresso.Mensagens.Clear();
             await preparador.PrepararAsync(projeto, progresso, CancellationToken.None);
-            Assert.Equal(4, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
+            Assert.Equal(6, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
             Assert.All(blocos, b => Assert.Equal(b.Value, File.GetLastWriteTimeUtc(b.Key)));
             var som = Path.Combine(pasta, "resultado.pcm");
             await Ffmpeg("-i", previa.Caminho, "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", som);
@@ -63,7 +65,7 @@ public sealed class TestesPreparacaoComposicao
             File.SetLastWriteTimeUtc(audio, DateTime.UtcNow.AddMinutes(1));
             progresso.Mensagens.Clear();
             await preparador.PrepararAsync(projeto, progresso, CancellationToken.None);
-            Assert.Equal(5, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
+            Assert.Equal(7, Directory.GetFiles(Path.GetDirectoryName(previa.Caminho)!, "bloco-*.nut").Length);
         }
         finally { Directory.Delete(pasta, true); }
     }

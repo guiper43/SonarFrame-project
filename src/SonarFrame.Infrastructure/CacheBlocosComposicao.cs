@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text.Json;
 using SonarFrame.Core;
 
@@ -9,67 +9,125 @@ namespace SonarFrame.Infrastructure;
 public sealed partial class PreparadorComposicaoFfmpeg
 {
     private readonly Dictionary<string, DateTime> usosBlocos = [];
+    public DiagnosticoPreparacao? UltimoDiagnostico { get; private set; }
+    private readonly SemaphoreSlim acessoPreparacao = new(1, 1);
+    private readonly AsyncLocal<DiagnosticoPreparacao?> medicaoAtual = new();
 
     public async Task<Midia> PrepararAsync(Projeto projeto, IProgress<string>? progresso, CancellationToken token)
     {
+        await acessoPreparacao.WaitAsync(token).ConfigureAwait(false);
+        var diagnostico = new DiagnosticoPreparacao();
+        var relogio = Stopwatch.StartNew();
+        medicaoAtual.Value = diagnostico;
+        try
+        {
+            var resultado = await Task.Run(() => PrepararMedidoAsync(projeto, progresso, diagnostico, token), token).ConfigureAwait(false);
+            diagnostico.Concluida = true;
+            return resultado;
+        }
+        finally
+        {
+            diagnostico.TotalPreparacaoMs = relogio.Elapsed.TotalMilliseconds;
+            UltimoDiagnostico = diagnostico;
+            medicaoAtual.Value = null;
+            acessoPreparacao.Release();
+        }
+    }
+
+    private async Task<Midia> PrepararMedidoAsync(Projeto projeto, IProgress<string>? progresso, DiagnosticoPreparacao diagnostico, CancellationToken token)
+    {
+        var resolucao = Stopwatch.StartNew();
         projeto.Validar();
+        projeto = Normalizar(projeto);
+        diagnostico.MixagemAudioMs = 0;
         if (projeto.LinhaDoTempo.IsEmpty) throw new InvalidOperationException("Adicione conteúdos à composição antes de reproduzir.");
         token.ThrowIfCancellationRequested();
-        var chave = await Task.Run(() => Chave(projeto), token);
+        var chave = Chave(projeto);
+        diagnostico.ResolucaoComposicaoMs = resolucao.Elapsed.TotalMilliseconds;
         if (chave == chaveAtual && preparada is not null && File.Exists(preparada.Caminho))
         {
+            diagnostico.PreviaReutilizada = true;
             progresso?.Report("Carregando vídeo: 100%.");
             return preparada;
         }
         progresso?.Report("Carregando vídeo: 0%.");
-        await Task.Run(PrepararPasta, token);
+        PrepararPasta();
         preparada = null;
         chaveAtual = null;
-        foreach (var nome in new[] { "previa.mp4", "intervalo.mp4", "preparando.mp4", "preparando.nut" })
+        foreach (var nome in new[] { "previa.mp4", "previa.mov", "intervalo.mp4", "preparando.mp4", "preparando.mov", "preparando.nut", "audio.m4a" })
             File.Delete(Path.Combine(pasta, nome));
         var metadados = await LerMetadadosAsync(Fontes(projeto), null, token);
         var (largura, altura) = DimensoesQuadro(projeto, metadados);
-        var blocos = new List<(Projeto Projeto, string Arquivo)>();
-        for (var inicio = TempoMidia.Zero; inicio < projeto.Duracao; inicio += TempoMidia.Segundos(5))
+        var consulta = Stopwatch.StartNew();
+        var blocos = new List<(Projeto Projeto, string Video, string Audio)>();
+        foreach (var (inicio, fim) in Segmentos(projeto))
         {
             token.ThrowIfCancellationRequested();
-            var bloco = RecortarBloco(projeto, inicio, TempoMidia.Minimo(inicio + TempoMidia.Segundos(5), projeto.Duracao));
-            var identidade = JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 1, largura, altura, Conteudo = Chave(bloco) });
-            var arquivo = Path.Combine(pasta, "bloco-" + Convert.ToHexString(SHA256.HashData(identidade)) + ".nut");
-            blocos.Add((bloco, arquivo));
+            var bloco = RecortarBloco(projeto, inicio, fim);
+            blocos.Add((bloco, CaminhoBloco(bloco, largura, altura, false), CaminhoBloco(bloco, largura, altura, true)));
         }
-        var protegidos = blocos.Select(b => b.Arquivo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var protegidos = blocos.SelectMany(b => new[] { b.Video, b.Audio }).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        diagnostico.ConsultaCacheMs = consulta.Elapsed.TotalMilliseconds;
         var temporario = Path.Combine(pasta, "preparando.nut");
-        var destino = Path.Combine(pasta, "preparando.mp4");
+        var destino = Path.Combine(pasta, "preparando.mov");
         try
         {
+            var percentualAnterior = 0;
             for (var i = 0; i < blocos.Count; i++)
             {
                 token.ThrowIfCancellationRequested();
                 var bloco = blocos[i];
-                if (!File.Exists(bloco.Arquivo))
+                diagnostico.BlocosConsultados++;
+                var renderizou = false;
+                consulta.Restart();
+                var reutilizado = File.Exists(bloco.Video) && File.Exists(bloco.Audio);
+                diagnostico.ConsultaCacheMs += consulta.Elapsed.TotalMilliseconds;
+                if (reutilizado) diagnostico.CacheHits++; else diagnostico.CacheMisses++;
+                foreach (var audio in new[] { false, true })
                 {
+                    var arquivo = audio ? bloco.Audio : bloco.Video;
+                    if (File.Exists(arquivo)) { usosBlocos[arquivo] = DateTime.UtcNow; continue; }
                     LiberarBlocos(protegidos, LimiteBytes / 2 - 32 * 1024 * 1024);
                     var disponivel = LimiteBytes / 2 - TamanhoBlocos();
                     if (disponivel < 2 * 1024 * 1024) throw new IOException("O cache atingiu o limite de 2 GB. Reduza a composição para reproduzir.");
-                    await RenderizarBlocoAsync(bloco.Projeto, metadados, largura, altura, temporario, disponivel, token);
+                    var renderizacao = Stopwatch.StartNew();
+                    try { await RenderizarBlocoAsync(bloco.Projeto, metadados, largura, altura, temporario, disponivel, audio, token); }
+                    finally
+                    {
+                        diagnostico.RenderizacaoComMixagemMs += renderizacao.Elapsed.TotalMilliseconds;
+                        if (audio) diagnostico.MixagemAudioMs += renderizacao.Elapsed.TotalMilliseconds;
+                        else diagnostico.RenderizacaoVideoMs += renderizacao.Elapsed.TotalMilliseconds;
+                    }
+                    if (audio) diagnostico.AudiosRenderizados++; else diagnostico.VideosRenderizados++;
+                    renderizou = true;
                     if (Chave(projeto) != chave) throw new IOException("Uma mídia mudou durante a preparação. Reproduza novamente para atualizar.");
-                    File.Move(temporario, bloco.Arquivo);
+                    File.Move(temporario, arquivo);
+                    usosBlocos[arquivo] = DateTime.UtcNow;
                 }
-                usosBlocos[bloco.Arquivo] = DateTime.UtcNow;
-                progresso?.Report($"Carregando vídeo: {(i + 1) * 90 / blocos.Count}%.");
+                if (renderizou) diagnostico.BlocosRenderizados++;
+                var percentual = (i + 1) * 90 / blocos.Count;
+                if (percentual != percentualAnterior) progresso?.Report($"Carregando vídeo: {percentual}%.");
+                percentualAnterior = percentual;
             }
             progresso?.Report("Carregando vídeo: 95%.");
             var lista = Path.Combine(pasta, "blocos.txt");
+            var listaAudio = Path.Combine(pasta, "audios.txt");
             await File.WriteAllLinesAsync(lista, blocos.SelectMany(b => new[]
             {
-                $"file '{Path.GetFileName(b.Arquivo)}'", $"duration {Segundos(b.Projeto.Duracao)}"
+                $"file '{Path.GetFileName(b.Video)}'", $"duration {Segundos(b.Projeto.Duracao)}"
             }), token);
+            await File.WriteAllLinesAsync(listaAudio, blocos.SelectMany(b => new[]
+            {
+                $"file '{Path.GetFileName(b.Audio)}'", $"duration {Segundos(b.Projeto.Duracao)}"
+            }), token);
+            var disponivelFinal = LimiteBytes - TamanhoBlocos() - 1024 * 1024;
+            if (disponivelFinal < 1024 * 1024) throw new IOException("O cache não tem espaço para montar a prévia.");
+            var montagem = Stopwatch.StartNew();
             await ExecutarAsync(["-v", "error", "-nostdin", "-y", "-f", "concat", "-safe", "1", "-i", lista,
-                "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                "-t", Segundos(projeto.Duracao), "-fs", (LimiteBytes / 2).ToString(CultureInfo.InvariantCulture),
+                "-f", "concat", "-safe", "1", "-i", listaAudio, "-map", "0:v:0", "-map", "1:a:0", "-c", "copy",
+                "-t", Segundos(projeto.Duracao), "-fs", disponivelFinal.ToString(CultureInfo.InvariantCulture),
                 "-movflags", "+faststart", destino], token);
-            if (new FileInfo(destino).Length >= LimiteBytes / 2 - 1024 * 1024)
+            if (new FileInfo(destino).Length >= disponivelFinal - 1024 * 1024)
                 throw new IOException("A prévia excedeu o limite de cache. Reduza a composição para reproduzir.");
             if (Chave(projeto) != chave) throw new IOException("Uma mídia mudou durante a preparação. Reproduza novamente para atualizar.");
             using var verificacao = JsonDocument.Parse(await ffprobe.InspecionarAsync(destino, token));
@@ -77,8 +135,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
             if (Math.Abs(duracao - (decimal)projeto.Duracao.Numerador / projeto.Duracao.Denominador) > 0.08m)
                 throw new InvalidDataException("A duração da prévia não corresponde à composição.");
             token.ThrowIfCancellationRequested();
-            var concluido = Path.Combine(pasta, "previa.mp4");
+            var concluido = Path.Combine(pasta, "previa.mov");
             File.Move(destino, concluido, overwrite: true);
+            diagnostico.MontagemFinalMs = montagem.Elapsed.TotalMilliseconds;
             preparada = new(Guid.NewGuid(), "Composição", concluido, TipoMidia.Video, projeto.Duracao, new(30, 1));
             chaveAtual = chave;
             progresso?.Report("Carregando vídeo: 100%.");
@@ -88,6 +147,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
         {
             File.Delete(temporario);
             File.Delete(destino);
+            File.Delete(Path.Combine(pasta, "audio.m4a"));
         }
     }
 
@@ -125,4 +185,10 @@ public sealed partial class PreparadorComposicaoFfmpeg
             tamanho -= bytes;
         }
     }
+    private string CaminhoBloco(Projeto bloco, int largura, int altura, bool audio)
+    {
+        var identidade = JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 2, Largura = audio ? 0 : largura, Altura = audio ? 0 : altura, Conteudo = ChaveConteudo(bloco, audio) });
+        return Path.Combine(pasta, "bloco-" + (audio ? "audio-" : "video-") + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(identidade)) + ".nut");
+    }
+
 }

@@ -33,15 +33,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         .Select(c => projeto.Biblioteca.Single(m => m.Id == c.MidiaId)).DistinctBy(m => m.Id).ToArray();
 
     private static string Chave(Projeto projeto)
-    {
-        var arquivos = Fontes(projeto).Select(m =>
-        {
-            var info = new FileInfo(m.Caminho);
-            if (!info.Exists) throw new FileNotFoundException($"Arquivo ausente: {m.Nome}. Use Localizar arquivo na biblioteca.");
-            return new { m.Id, Caminho = info.FullName, m.Tipo, info.Length, info.LastWriteTimeUtc };
-        }).ToArray();
-        return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 3, projeto.LinhaDoTempo, projeto.Camadas, arquivos })));
-    }
+        => ChaveConteudo(projeto);
 
     public Task<bool> EstaAtualizadaAsync(Projeto projeto, CancellationToken token) => Task.Run(() =>
     {
@@ -50,11 +42,13 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
     }, token);
 
     private async Task RenderizarBlocoAsync(Projeto projeto, Dictionary<Guid, Metadados> metadados,
-        int larguraQuadro, int alturaQuadro, string destino, long disponivel, CancellationToken token)
+        int larguraQuadro, int alturaQuadro, string destino, long disponivel, bool somenteAudio, CancellationToken token)
     {
+        if (!somenteAudio) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
         var fontes = Fontes(projeto);
         var argumentos = new List<string> { "-hide_banner", "-v", "error", "-nostdin", "-y" };
-        var filtros = new StringBuilder();
+        var filtrosVideo = new StringBuilder();
+        var filtrosAudio = new StringBuilder();
         var buscas = new Dictionary<int, TempoMidia>();
         async Task EntradaAsync(Midia midia, Clipe clipe, int indice)
         {
@@ -86,7 +80,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             var duracao = Segundos(clipe.Duracao);
             return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{Escala(larguraQuadro, alturaQuadro, transparente)},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao},setpts=PTS+{Segundos(inicio)}/TB";
         }
-        filtros.Append($"color=c=black:s={larguraQuadro}x{alturaQuadro}:r=30:d={Segundos(projeto.Duracao)},setsar=1[vbase];");
+        filtrosVideo.Append($"color=c=black:s={larguraQuadro}x{alturaQuadro}:r=30:d={Segundos(projeto.Duracao)},setsar=1[vbase];");
         var visualAtual = "vbase";
         var inicioClipe = TempoMidia.Zero;
         for (var i = 0; i < projeto.LinhaDoTempo.Length; i++)
@@ -96,19 +90,19 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             var dados = metadados[midia.Id];
             await EntradaAsync(midia, clipe, i);
             var duracao = Segundos(clipe.Duracao);
-            if (dados.Video)
+            if (dados.Video && !somenteAudio)
             {
-                filtros.Append(await VideoAsync(clipe, midia, i, inicioClipe, false) + $"[v{i}];");
-                filtros.Append($"[{visualAtual}][v{i}]overlay=eof_action=pass:repeatlast=0:enable='gte(t,{Segundos(inicioClipe)})*lt(t,{Segundos(inicioClipe + clipe.Duracao)})'[principal{i}];");
+                filtrosVideo.Append(await VideoAsync(clipe, midia, i, inicioClipe, false) + $"[v{i}];");
+                filtrosVideo.Append($"[{visualAtual}][v{i}]overlay=eof_action=pass:repeatlast=0:enable='gte(t,{Segundos(inicioClipe)})*lt(t,{Segundos(inicioClipe + clipe.Duracao)})'[principal{i}];");
                 visualAtual = $"principal{i}";
             }
-            filtros.Append(dados.Audio && midia.Tipo != TipoMidia.Imagem
+            filtrosAudio.Append(dados.Audio && midia.Tipo != TipoMidia.Imagem
                 ? Audio(clipe, i) + $"[a{i}];"
                 : $"anullsrc=r=48000:cl=stereo,atrim=duration={duracao}[a{i}];");
             inicioClipe += clipe.Duracao;
         }
-        for (var i = 0; i < projeto.LinhaDoTempo.Length; i++) filtros.Append($"[a{i}]");
-        filtros.Append($"concat=n={projeto.LinhaDoTempo.Length}:v=0:a=1[basea];");
+        for (var i = 0; i < projeto.LinhaDoTempo.Length; i++) filtrosAudio.Append($"[a{i}]");
+        filtrosAudio.Append($"concat=n={projeto.LinhaDoTempo.Length}:v=0:a=1[basea];");
         var audios = new List<string> { "basea" };
         for (var camadaIndice = 0; camadaIndice < projeto.Camadas.Length; camadaIndice++)
         {
@@ -118,25 +112,25 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             var dados = metadados[midia.Id];
             var entrada = projeto.LinhaDoTempo.Length + camadaIndice;
             await EntradaAsync(midia, clipe, entrada);
-            if (dados.Video)
+            if (dados.Video && !somenteAudio)
             {
-                filtros.Append(await VideoAsync(clipe, midia, entrada, camada.Inicio, true) + $"[cv{camadaIndice}];");
-                filtros.Append($"[{visualAtual}][cv{camadaIndice}]overlay=eof_action=pass:repeatlast=0:format=auto:enable='gte(t,{Segundos(camada.Inicio)})*lt(t,{Segundos(camada.Inicio + clipe.Duracao)})'[sobre{camadaIndice}];");
+                filtrosVideo.Append(await VideoAsync(clipe, midia, entrada, camada.Inicio, true) + $"[cv{camadaIndice}];");
+                filtrosVideo.Append($"[{visualAtual}][cv{camadaIndice}]overlay=eof_action=pass:repeatlast=0:format=auto:enable='gte(t,{Segundos(camada.Inicio)})*lt(t,{Segundos(camada.Inicio + clipe.Duracao)})'[sobre{camadaIndice}];");
                 visualAtual = $"sobre{camadaIndice}";
             }
             if (dados.Audio && midia.Tipo != TipoMidia.Imagem)
             {
                 var atraso = decimal.Round((decimal)camada.Inicio.Numerador * 48000 / camada.Inicio.Denominador);
-                filtros.Append(Audio(clipe, entrada) + $",adelay={atraso.ToString(CultureInfo.InvariantCulture)}S:all=1[ca{camadaIndice}];");
+                filtrosAudio.Append(Audio(clipe, entrada) + $",adelay={atraso.ToString(CultureInfo.InvariantCulture)}S:all=1[ca{camadaIndice}];");
                 audios.Add($"ca{camadaIndice}");
             }
         }
-        filtros.Append($"[{visualAtual}]format=yuv420p[v];");
-        foreach (var audio in audios) filtros.Append($"[{audio}]");
-        filtros.Append($"amix=inputs={audios.Count}:duration=first:normalize=0:dropout_transition=0,atrim=duration={Segundos(projeto.Duracao)}[a]");
+        filtrosVideo.Append($"[{visualAtual}]format=yuv420p[v];");
+        foreach (var audio in audios) filtrosAudio.Append($"[{audio}]");
+        filtrosAudio.Append($"amix=inputs={audios.Count}:duration=first:normalize=0:dropout_transition=0,atrim=duration={Segundos(projeto.Duracao)}[a]");
         var script = Path.Combine(pasta, "filtros.txt");
-        await File.WriteAllTextAsync(script, filtros.ToString(), token);
-        argumentos.AddRange(["-filter_complex_threads", "1", "-/filter_complex", script, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-c:a", "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
+        await File.WriteAllTextAsync(script, (somenteAudio ? filtrosAudio : filtrosVideo).ToString().TrimEnd(';'), token);
+        argumentos.AddRange(["-filter_complex_threads", "1", "-/filter_complex", script, "-map", somenteAudio ? "[a]" : "[v]", "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-c:a", "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
         await ExecutarAsync(argumentos, token);
         if (new FileInfo(destino).Length >= disponivel - 1024 * 1024)
             throw new IOException("A preparação excedeu o limite de cache. Reduza a composição para reproduzir.");
@@ -234,7 +228,13 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         token.ThrowIfCancellationRequested();
         var inicio = new ProcessStartInfo(ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
         foreach (var argumento in argumentos) inicio.ArgumentList.Add(argumento);
+        var criacao = Stopwatch.StartNew();
         using var processo = IniciarFfmpeg(inicio);
+        if (medicaoAtual.Value is { } medicao)
+        {
+            medicao.CriacaoProcessosFfmpegMs += criacao.Elapsed.TotalMilliseconds;
+            medicao.ProcessosFfmpeg++;
+        }
         var erros = processo.StandardError.ReadToEndAsync();
         try
         {

@@ -13,7 +13,6 @@ public sealed partial class PreparadorComposicaoFfmpeg
         var destino = Path.Combine(pasta, "intervalo.mp4");
         var duracao = fim - inicio;
         File.Delete(destino);
-        LiberarBlocos([], LimiteBytes / 4);
         var disponivel = LimiteBytes - TamanhoBlocos() - new FileInfo(completa.Caminho).Length - 1024 * 1024;
         if (disponivel < 1024 * 1024) throw new IOException("O cache não tem espaço no limite de 2 GB para preparar este intervalo. Reduza a composição.");
         var filtros = $"[0:v]trim=start={Segundos(inicio)}:end={Segundos(fim)},setpts=PTS-{Segundos(inicio)}/TB,fps=30:start_time=0,tpad=stop_mode=clone:stop_duration={Segundos(duracao)}[v];"
