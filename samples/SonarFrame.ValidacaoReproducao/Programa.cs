@@ -35,6 +35,11 @@ async Task ExecutarAsync(params string[] argumentos)
 
 try
 {
+    if (args.FirstOrDefault(a => a.StartsWith("--incremental=")) is { } incremental)
+    {
+        await BenchmarkIncremental.ExecutarAsync(raiz, incremental.Split('=')[1], ExecutarAsync, token);
+        return 0;
+    }
     foreach (var extensao in new[] { "jpg", "jpeg", "png", "mp4", "mov", "mp3", "wav", "m4a", "ogg", "opus.ogg" })
     {
         var arquivo = Path.Combine(pasta, "mídia de teste." + extensao);
