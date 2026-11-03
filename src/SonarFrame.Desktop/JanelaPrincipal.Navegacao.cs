@@ -9,6 +9,38 @@ namespace SonarFrame.Desktop;
 
 public partial class JanelaPrincipal
 {
+    private bool contextoTemporalTimeline;
+    private bool focarRemocaoTimeline;
+
+    private void AbrirMenuTimeline(bool remover = false)
+    {
+        focarRemocaoTimeline = remover;
+        MenuTimeline.PlacementTarget = LinhaDoTempo;
+        MenuTimeline.IsOpen = true;
+    }
+
+    private void MenuTimelineAberto(object sender, RoutedEventArgs e)
+    {
+        Atualizar();
+        var item = sessao is null ? null : new AcoesEdicao(sessao).Conteudos().SingleOrDefault(c => c.Id == sessao.Atual.ItemSelecionadoId);
+        MenuRemoverComposicao.Header = item?.EhCamada == true ? "Remover camada da composição" : item is null ? "Remover conteúdo da composição"
+            : $"Remover {Tipo(sessao!.Atual.Biblioteca.Single(m => m.Id == item.MidiaId).Tipo).ToLowerInvariant()} da composição";
+        var destino = focarRemocaoTimeline && MenuRemoverComposicao.IsEnabled ? MenuRemoverComposicao : MenuConsultarTempo;
+        focarRemocaoTimeline = false;
+        destino.Focus();
+    }
+
+    private void MenuTimelineFechado(object sender, RoutedEventArgs e) => FocarConteudoSelecionado();
+
+    private void SelecionarAlvoMenuTimeline(object sender, MouseButtonEventArgs e)
+    {
+        contextoTemporalTimeline = false;
+        if (e.OriginalSource is DependencyObject origem && ItemsControl.ContainerFromElement(LinhaDoTempo, origem) is ListBoxItem item)
+        {
+            item.IsSelected = true;
+            item.Focus();
+        }
+    }
     internal Task UltimaRemocaoBiblioteca { get; private set; } = Task.CompletedTask;
 
     private async Task RemoverSelecionadasDaBibliotecaAsync()
@@ -60,7 +92,11 @@ public partial class JanelaPrincipal
         var origem = e.OriginalSource as DependencyObject;
         var area = Regioes.FirstOrDefault(r => origem is not null && (r == origem || r.IsAncestorOf(origem)));
         if (area is null) return;
-        if (area == RegiaoLinhaDoTempo && e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None
+        if (area == RegiaoLinhaDoTempo && (e.Key == Key.Apps || e.Key == Key.F10 && e.KeyboardDevice.Modifiers == ModifierKeys.Shift))
+        {
+            e.Handled = true; AbrirMenuTimeline(); return;
+        }
+        if (area == RegiaoLinhaDoTempo && e.Key == Key.Enter && e.KeyboardDevice.Modifiers == ModifierKeys.None
             && origem is not null && (origem == LinhaDoTempo || LinhaDoTempo.IsAncestorOf(origem)))
         {
             e.Handled = true;
@@ -71,33 +107,36 @@ public partial class JanelaPrincipal
             }
             return;
         }
-        if (area == RegiaoLinhaDoTempo && e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None
+        if (area == RegiaoLinhaDoTempo && e.Key == Key.Delete && e.KeyboardDevice.Modifiers == ModifierKeys.None
             && origem is not null && (origem == LinhaDoTempo || LinhaDoTempo.IsAncestorOf(origem)))
         {
-            e.Handled = true; RemoverDaComposicao(sender, e); return;
+            e.Handled = true;
+            if (contextoTemporalTimeline && sessao?.Atual.Selecao is not null) ExcluirIntervaloSelecionado(sender, e);
+            else AbrirMenuTimeline(true);
+            return;
         }
-        if (area == RegiaoLinhaDoTempo && e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None
+        if (area == RegiaoLinhaDoTempo && e.Key == Key.Space && e.KeyboardDevice.Modifiers == ModifierKeys.None
             && origem is not null && (origem == LinhaDoTempo || LinhaDoTempo.IsAncestorOf(origem)))
         {
             e.Handled = true; AlternarComposicao(sender, e); return;
         }
-        if (area == RegiaoBiblioteca && e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None
+        if (area == RegiaoBiblioteca && e.Key == Key.Delete && e.KeyboardDevice.Modifiers == ModifierKeys.None
             && origem is not null && (origem == Biblioteca || Biblioteca.IsAncestorOf(origem)))
         {
             e.Handled = true;
             UltimaRemocaoBiblioteca = RemoverSelecionadasDaBibliotecaAsync();
             return;
         }
-        if (area == RegiaoBiblioteca && e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None
+        if (area == RegiaoBiblioteca && e.Key == Key.Enter && e.KeyboardDevice.Modifiers == ModifierKeys.None
             && origem is not null && (origem == Biblioteca || Biblioteca.IsAncestorOf(origem)))
         {
             e.Handled = true;
             AbrirPreviaSelecionada(sender, e);
             return;
         }
-        if (e.Key == Key.Tab && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        if (e.Key == Key.Tab && e.KeyboardDevice.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
-            var reverso = Keyboard.Modifiers == ModifierKeys.Shift;
+            var reverso = e.KeyboardDevice.Modifiers == ModifierKeys.Shift;
             var acoes = ControlesDaArea(area).ToArray();
             var indiceAcao = Array.FindIndex(acoes, c => c == origem || (origem is not null && c.IsAncestorOf(origem)));
             var proximaAcao = indiceAcao + (reverso ? -1 : 1);
@@ -121,7 +160,7 @@ public partial class JanelaPrincipal
             }
             return;
         }
-        if (area == RegiaoLinhaDoTempo && origem is not TextBox && e.Key is Key.Home or Key.End)
+        if (area == RegiaoLinhaDoTempo && origem is not TextBox && e.Key is Key.Home or Key.End or Key.PageUp or Key.PageDown)
         {
             TeclaNavegacaoTemporal(sender, e);
             return;
@@ -132,7 +171,8 @@ public partial class JanelaPrincipal
             else if (origem is not TextBox) e.Handled = true;
             return;
         }
-        if (e.Key is not (Key.Up or Key.Down) || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (e.Key is not (Key.Up or Key.Down) || e.KeyboardDevice.Modifiers != ModifierKeys.None) return;
+        if (area == RegiaoLinhaDoTempo) contextoTemporalTimeline = false;
         var controles = ControlesDaArea(area).ToArray();
         var indice = Array.FindIndex(controles, c => c == origem || (origem is not null && c.IsAncestorOf(origem)));
         if (indice < 0) return;

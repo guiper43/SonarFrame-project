@@ -9,12 +9,193 @@ namespace SonarFrame.Desktop.Tests;
 
 public sealed class TestesReproducaoComposicao
 {
+    [Fact]
+    public Task TimelineAlternaEntreIntervaloEItemSemRemoverAoAbrirMenu()
+    {
+        return TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            janela.ExibirProjeto(ProjetoTeste(), salvo: true, caminho: caminho);
+            janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+            janela.LinhaDoTempo.SelectedIndex = 0;
+            janela.LinhaDoTempo.Focus();
+            var sessao = janela.SessaoAtual!;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Right, ModifierKeys.Shift | ModifierKeys.Control));
+            await janela.UltimaNavegacaoTemporal;
+            Assert.NotNull(sessao.Atual.Selecao);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Down));
+            var antes = sessao.Atual;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Delete));
+            Assert.True(janela.MenuTimeline.IsOpen);
+            Assert.Equal("Remover vídeo da composição", janela.MenuRemoverComposicao.Header);
+            Assert.True(janela.MenuRemoverComposicao.IsFocused);
+            Assert.Equal(antes, sessao.Atual);
+            Assert.False(sessao.PodeDesfazer);
+            janela.MenuTimeline.RaiseEvent(new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(janela.MenuTimeline)!, Environment.TickCount, Key.Escape)
+            { RoutedEvent = Keyboard.KeyDownEvent });
+            Assert.False(janela.MenuTimeline.IsOpen);
+            Assert.True(FocusManager.GetFocusedElement(janela) is ListBoxItem or ListBox);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Apps));
+            Assert.True(janela.MenuTimeline.IsOpen);
+            janela.MenuTimeline.IsOpen = false;
+            janela.LinhaDoTempo.UpdateLayout();
+            var alvo = (ListBoxItem)janela.LinhaDoTempo.ItemContainerGenerator.ContainerFromIndex(0);
+            alvo.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right)
+            { RoutedEvent = Mouse.PreviewMouseDownEvent });
+            Assert.Equal(0, janela.LinhaDoTempo.SelectedIndex);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.F10, ModifierKeys.Shift));
+            Assert.True(janela.MenuTimeline.IsOpen);
+            janela.MenuTimeline.IsOpen = false;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Left, ModifierKeys.Shift | ModifierKeys.Control));
+            await janela.UltimaNavegacaoTemporal;
+            Assert.Null(sessao.Atual.Selecao);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Right, ModifierKeys.Shift | ModifierKeys.Control));
+            await janela.UltimaNavegacaoTemporal;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Delete));
+            await janela.UltimaEdicao;
+            Assert.False(janela.MenuTimeline.IsOpen);
+            Assert.Equal(TempoMidia.Segundos(3), sessao.Atual.Duracao);
+            Assert.Null(sessao.Atual.Selecao);
+            Assert.True(FocusManager.GetFocusedElement(janela) is ListBoxItem or ListBox);
+        }, new Fabrica(), preparador: new Preparador());
+    }
+
+    [Fact]
+    public Task EditarPorAtalhoEBotaoPreservaFocoIntervaloEReproduzEstadoRestaurado()
+    {
+        var preparador = new Preparador();
+        return TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            janela.ExibirProjeto(ProjetoTeste(), salvo: true, caminho: caminho);
+            janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+            var sessao = janela.SessaoAtual!;
+            janela.LinhaDoTempo.SelectedIndex = 1;
+            janela.LinhaDoTempo.UpdateLayout();
+            var item = (ListBoxItem)janela.LinhaDoTempo.ItemContainerGenerator.ContainerFromIndex(1);
+            item.Focus();
+            var selecionado = sessao.Atual.ItemSelecionadoId;
+            sessao.Posicionar(TempoMidia.Segundos(1));
+            Assert.False(TecladoTeste.Pressionar(janela.Propriedades, Key.B, ModifierKeys.Control));
+            Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.B, ModifierKeys.Control));
+            await janela.UltimaEdicao;
+            Assert.Equal(3, sessao.Atual.LinhaDoTempo.Length);
+            Assert.Equal(selecionado, sessao.Atual.ItemSelecionadoId);
+            Assert.Equal(TempoMidia.Segundos(1), sessao.Atual.Cursor);
+            Assert.Contains("Parte 1 e Parte 2", janela.Situacao.Text);
+            var foco = Assert.IsType<ListBoxItem>(FocusManager.GetFocusedElement(janela));
+            Assert.Same(janela.LinhaDoTempo.SelectedItem, foco.Content);
+            var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(foco)!;
+            Assert.Contains("Vídeo", peer.GetName());
+            Assert.Contains("item 3", peer.GetName());
+            Assert.Contains("duração", peer.GetName());
+            var dividido = sessao.Atual;
+            janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length);
+            janela.MenuDividir.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(dividido.LinhaDoTempo.Select(c => (c.Nome, c.InicioNaOrigem, c.Duracao)), sessao.Atual.LinhaDoTempo.Select(c => (c.Nome, c.InicioNaOrigem, c.Duracao)));
+            await janela.ReproduzirComposicaoAsync(false);
+            Assert.Equal(sessao.Atual.LinhaDoTempo, preparador.Ultimo!.LinhaDoTempo);
+            await janela.NavegarTemporalAsync(Key.None, ModifierKeys.None, new TempoMidia(1, 2));
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Right, ModifierKeys.Control | ModifierKeys.Shift));
+            await janela.UltimaNavegacaoTemporal;
+            var antes = sessao.Atual;
+            janela.MenuConsultarTempo.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Assert.Contains("Intervalo selecionado de 00:00:00.500 até 00:00:01.500", janela.Situacao.Text);
+            Assert.Contains("00:00:01.500", System.Windows.Automation.AutomationProperties.GetName(janela.NavegadorTemporal));
+            var excluir = new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(janela.LinhaDoTempo)!, Environment.TickCount, Key.Delete)
+            { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            janela.LinhaDoTempo.RaiseEvent(excluir); await janela.UltimaEdicao;
+            Assert.True(excluir.Handled);
+            var depois = sessao.Atual;
+            Assert.Equal(TempoMidia.Segundos(3), depois.Duracao);
+            Assert.Equal(new TempoMidia(1, 2), depois.Cursor);
+            Assert.Null(depois.Selecao);
+            Assert.Equal(new[] { new TempoMidia(1, 2), new TempoMidia(1, 2), TempoMidia.Segundos(2) }, depois.LinhaDoTempo.Select(c => c.Duracao));
+            Assert.Equal(new TempoMidia(3, 2), depois.LinhaDoTempo[1].InicioNaOrigem);
+            Assert.Equal(antes.Biblioteca, depois.Biblioteca);
+            Assert.Contains("lacuna fechada", janela.Situacao.Text);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Z, ModifierKeys.Control)); await janela.UltimaEdicao;
+            Assert.Equal(antes, sessao.Atual);
+            janela.MenuExcluirSelecao.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(depois.LinhaDoTempo.ToArray(), sessao.Atual.LinhaDoTempo.ToArray());
+            Assert.Equal(depois.Cursor, sessao.Atual.Cursor);
+            depois = sessao.Atual;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Z, ModifierKeys.Control)); await janela.UltimaEdicao;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Y, ModifierKeys.Control)); await janela.UltimaEdicao;
+            Assert.Equal(depois, sessao.Atual);
+            await janela.ReproduzirComposicaoAsync(false);
+            Assert.Equal(depois.LinhaDoTempo, preparador.Ultimo!.LinhaDoTempo);
+            Assert.Equal(depois.Duracao, preparador.Ultimo.Duracao);
+        }, new Fabrica(), preparador: preparador);
+    }
+
+    [Fact]
+    public Task InsercaoIntermediariaEReordenacaoAtualizamListaHistoricoEPrevia()
+    {
+        var preparador = new Preparador();
+        return TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            janela.ExibirProjeto(ProjetoTeste(), salvo: true, caminho: caminho);
+            janela.LinhaDoTempo.SelectedIndex = 1;
+            janela.Biblioteca.SelectedIndex = 0;
+            var sessao = janela.SessaoAtual!;
+            var antes = sessao.Atual;
+            janela.BotaoInserirAntes.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(3, sessao.Atual.LinhaDoTempo.Length);
+            Assert.Equal(antes.LinhaDoTempo[0], sessao.Atual.LinhaDoTempo[0]);
+            Assert.Equal(antes.LinhaDoTempo[1], sessao.Atual.LinhaDoTempo[2]);
+            var inserido = sessao.Atual.LinhaDoTempo[1].Id;
+            Assert.Equal(inserido, sessao.Atual.ItemSelecionadoId);
+            janela.MenuMoverAntes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            var movido = sessao.Atual;
+            Assert.Equal(inserido, movido.LinhaDoTempo[0].Id);
+            Assert.Equal(3, janela.LinhaDoTempo.Items.Count);
+            Assert.Contains("posição 1 de 3", janela.Situacao.Text);
+            janela.MenuMoverAntes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Same(movido, sessao.Atual);
+            Assert.Contains("já está", janela.Situacao.Text);
+            janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(inserido, sessao.Atual.LinhaDoTempo[1].Id);
+            janela.MenuRefazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+            Assert.Equal(movido, sessao.Atual);
+            await janela.ReproduzirComposicaoAsync(false);
+            Assert.Equal(movido.LinhaDoTempo, preparador.Ultimo!.LinhaDoTempo);
+            Assert.Equal(TempoMidia.Segundos(6), preparador.Ultimo.Duracao);
+        }, new Fabrica(), preparador: preparador);
+    }
+
     private static Projeto ProjetoTeste()
     {
         var m = new Midia(Guid.NewGuid(), "Vídeo", "teste.mp4", TipoMidia.Video, TempoMidia.Segundos(2));
         return Projeto.Criar("Composição") with { Biblioteca = [m], LinhaDoTempo = [
             new(Guid.NewGuid(), m.Id, m.Nome, TempoMidia.Zero, m.Duracao!.Value),
             new(Guid.NewGuid(), m.Id, m.Nome, TempoMidia.Zero, m.Duracao.Value)] };
+    }
+
+    [Fact]
+    public Task SelecaoAteExtremosPodeSerConsultadaSemCriarEdicaoOuIntervaloVazio()
+    {
+        return TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            janela.ExibirProjeto(ProjetoTeste(), salvo: true, caminho: caminho);
+            janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+            var sessao = janela.SessaoAtual!;
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Home, ModifierKeys.Shift)); await janela.UltimaNavegacaoTemporal;
+            Assert.Null(sessao.Atual.Selecao);
+            Assert.Contains("Nenhum intervalo selecionado", janela.Situacao.Text);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.End, ModifierKeys.Shift)); await janela.UltimaNavegacaoTemporal;
+            Assert.Equal(new SelecaoTemporal(TempoMidia.Zero, TempoMidia.Segundos(4)), sessao.Atual.Selecao);
+            Assert.True(janela.MenuExcluirSelecao.IsEnabled);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Home)); await janela.UltimaNavegacaoTemporal;
+            Assert.Null(sessao.Atual.Selecao);
+            Assert.False(janela.MenuExcluirSelecao.IsEnabled);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.Z, ModifierKeys.Control)); await janela.UltimaEdicao;
+            Assert.Equal("Nenhuma edição para desfazer.", janela.Situacao.Text);
+            Assert.True(TecladoTeste.Pressionar(janela.LinhaDoTempo, Key.B, ModifierKeys.Control)); await janela.UltimaEdicao;
+            Assert.Contains("dentro de um clipe", janela.Situacao.Text);
+            Assert.False(sessao.PodeDesfazer);
+            Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length);
+        }, new Fabrica(), preparador: new Preparador());
     }
 
     [Fact]
@@ -44,7 +225,7 @@ public sealed class TestesReproducaoComposicao
             Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
             Assert.Equal("Pausar", janela.BotaoReproduzirPrevia.Content);
             Assert.Equal("Pausar", System.Windows.Automation.AutomationProperties.GetName(janela.BotaoReproduzirPrevia));
-            PressionarEspaco(janela.NavegadorTemporal); await janela.UltimaOperacaoComposicao;
+            PressionarEspaco(janela.LinhaDoTempo); await janela.UltimaOperacaoComposicao;
             Assert.Equal(EstadoPrevia.Pausada, janela.PreviaAtual.Atual.Estado);
             sessao.Posicionar(TempoMidia.Segundos(1)); sessao.Posicionar(TempoMidia.Segundos(2), true);
             var selecao = sessao.Atual.Selecao;
@@ -55,14 +236,14 @@ public sealed class TestesReproducaoComposicao
             Assert.Equal(TempoMidia.Segundos(2), sessao.Atual.Cursor);
             Assert.Equal(selecao, sessao.Atual.Selecao);
             janela.LinhaDoTempo.SelectedIndex = 0;
-            Assert.True(janela.BotaoRemoverComposicao.IsEnabled);
-            janela.BotaoRemoverComposicao.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(janela.MenuRemoverComposicao.IsEnabled);
+            janela.MenuRemoverComposicao.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
             await janela.UltimaOperacaoComposicao;
             Assert.Single(sessao.Atual.LinhaDoTempo); Assert.Single(sessao.Atual.Biblioteca);
             Assert.Equal(EstadoPrevia.Vazia, janela.PreviaAtual.Atual.Estado);
             await janela.ReproduzirComposicaoAsync(false);
             Assert.Equal(TempoMidia.Segundos(2), preparador.Ultimo!.Duracao);
-            janela.BotaoDesfazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
             Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length);
             janela.Biblioteca.SelectedIndex = 0;
             Assert.True(janela.BotaoRemoverMidia.IsEnabled);
@@ -71,7 +252,7 @@ public sealed class TestesReproducaoComposicao
 
     private static void PressionarEspaco(UIElement origem)
     {
-        var evento = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(origem)!, Environment.TickCount, Key.Space)
+        var evento = new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(origem)!, Environment.TickCount, Key.Space)
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         origem.RaiseEvent(evento);
         Assert.True(evento.Handled);
@@ -109,6 +290,34 @@ public sealed class TestesReproducaoComposicao
             await janela.UltimaOperacaoComposicao;
             Assert.Equal(EstadoPrevia.Pausada, janela.PreviaAtual.Atual.Estado);
             Assert.Equal("Reproduzir", janela.BotaoReproduzirPrevia.Content);
+        }, new Fabrica(), preparador: preparador);
+    }
+
+    [Fact]
+    public Task EditarDurantePreparacaoCancelaTrabalhoObsoletoSemAnuncioIntermediario()
+    {
+        var preparador = new Preparador { Aguardar = true };
+        return TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+            janela.ExibirProjeto(ProjetoTeste() with { Cursor = TempoMidia.Segundos(1) }, salvo: true, caminho: caminho);
+            janela.UpdateLayout();
+            await janela.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            janela.LinhaDoTempo.Focus();
+            Assert.Same(janela.LinhaDoTempo, FocusManager.GetFocusedElement(janela));
+            var operacao = janela.ReproduzirComposicaoAsync(false);
+            Assert.False(operacao.IsCompleted);
+            Assert.True(janela.Estrutura.IsEnabled);
+            janela.MenuDividir.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await janela.UltimaEdicao.WaitAsync(TimeSpan.FromSeconds(5));
+            await operacao;
+            Assert.Equal(3, janela.SessaoAtual!.Atual.LinhaDoTempo.Length);
+            Assert.Equal(TempoMidia.Segundos(1), janela.SessaoAtual.Atual.Cursor);
+            Assert.Same(janela.LinhaDoTempo, FocusManager.GetFocusedElement(janela));
+            Assert.DoesNotContain(janela.Mensagens.Items.Cast<object>(), m => m.ToString()!.Contains("cancelada", StringComparison.OrdinalIgnoreCase));
+            preparador.Aguardar = false;
+            await janela.ReproduzirComposicaoAsync(false);
+            Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
         }, new Fabrica(), preparador: preparador);
     }
 

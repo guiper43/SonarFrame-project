@@ -18,6 +18,7 @@ public partial class JanelaPrincipal
     private TempoMidia? destinoManualComposicao;
     private TempoMidia inicioArquivoComposicao;
     private bool intervaloPreparado;
+    private bool cancelamentoExplicitoComposicao;
     internal Task UltimaOperacaoComposicao { get; private set; } = Task.CompletedTask;
 
     private void ConfigurarComposicao(IPreparadorComposicao? preparador = null)
@@ -31,6 +32,7 @@ public partial class JanelaPrincipal
     private void ReproduzirSelecaoComposicao(object sender, RoutedEventArgs e) => UltimaOperacaoComposicao = ReproduzirComposicaoAsync(true);
     private void CancelarPreparacaoComposicao(object sender, RoutedEventArgs e)
     {
+        cancelamentoExplicitoComposicao = true;
         preparacaoComposicao?.Cancel(); navegacaoTemporal?.Cancel(); buscaQuadro?.Cancel(); previa.Cancelar();
     }
     private void PararComposicao(object sender, RoutedEventArgs e) => UltimaOperacaoComposicao = PararComposicaoAsync();
@@ -50,6 +52,7 @@ public partial class JanelaPrincipal
         if (selecao && (snapshot.Selecao is null || snapshot.Selecao.Inicio == snapshot.Selecao.Fim)) return;
         using var cancelamento = new CancellationTokenSource();
         preparacaoComposicao = cancelamento;
+        cancelamentoExplicitoComposicao = false;
         var finalizada = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         preparacaoFinalizada = finalizada;
         try
@@ -96,7 +99,7 @@ public partial class JanelaPrincipal
         catch (OperationCanceledException)
         {
             await previa.LimparAsync(); composicaoAtiva = false;
-            Anunciar("Preparação da composição cancelada.");
+            if (cancelamentoExplicitoComposicao) Anunciar("Preparação da composição cancelada.");
         }
         catch (Exception ex)
         {
@@ -119,7 +122,7 @@ public partial class JanelaPrincipal
             : TempoMidia.Minimo(inicioArquivoComposicao + previa.Posicao, sessao.Atual.Duracao);
         if (fimReproducaoSelecao is { } fim) posicao = TempoMidia.Minimo(posicao, fim);
         sessao.Posicionar(posicao, reproducao: true);
-        NavegadorTemporal.Content = $"Posição: {posicao} · Duração: {sessao.Atual.Duracao}";
+        NavegadorTemporal.Text = $"Posição: {posicao} · Duração: {sessao.Atual.Duracao}";
         if (previa.Atual.Estado != EstadoPrevia.Reproduzindo)
             System.Windows.Automation.AutomationProperties.SetName(NavegadorTemporal, $"Posição {TempoFalado(posicao)}");
         if (!intervaloPreparado && fimReproducaoSelecao is { } limite && posicao >= limite && previa.Atual.Estado == EstadoPrevia.Reproduzindo && !encerrandoSelecao)

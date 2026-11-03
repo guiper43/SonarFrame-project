@@ -25,7 +25,7 @@ public sealed class TestesPreviaBiblioteca
             item.Focus();
             foreach (var tecla in new[] { Key.Up, Key.Down, Key.Delete })
             {
-                item.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(item)!, Environment.TickCount, tecla)
+                item.RaiseEvent(new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(item)!, Environment.TickCount, tecla)
                 { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 if (tecla != Key.Delete) Assert.Same(item, FocusManager.GetFocusedElement(janela));
             }
@@ -58,7 +58,7 @@ public sealed class TestesPreviaBiblioteca
             janela.BotaoAbrirPrevia.MoveFocus(new TraversalRequest(FocusNavigationDirection.Previous));
             Assert.Equal(0, janela.Biblioteca.SelectedIndex);
             Assert.Equal(0, fabrica.Aberturas);
-            item.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(item)!, Environment.TickCount, Key.Enter)
+            item.RaiseEvent(new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(item)!, Environment.TickCount, Key.Enter)
             { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             await janela.UltimaOperacaoPrevia;
             Assert.Equal(1, fabrica.Aberturas);
@@ -99,7 +99,7 @@ public sealed class TestesPreviaBiblioteca
 
     private static void PressionarTab(UIElement origem)
     {
-        var evento = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(origem)!, Environment.TickCount, Key.Tab)
+        var evento = new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(origem)!, Environment.TickCount, Key.Tab)
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         origem.RaiseEvent(evento);
         Assert.True(evento.Handled);
@@ -138,7 +138,7 @@ public sealed class TestesPreviaBiblioteca
             Assert.False(janela.SessaoAtual.PodeDesfazer);
             janela.Biblioteca.SelectedItems.Clear(); janela.Biblioteca.SelectedIndex = 0;
             await janela.AbrirPreviaSelecionadaAsync(); Assert.True(janela.BotaoBuscarPrevia.IsEnabled);
-            janela.BotaoDividir.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            janela.MenuDividir.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
             Assert.Equal(EstadoPrevia.Pausada, janela.PreviaAtual.Atual.Estado);
             Assert.Equal(2, janela.SessaoAtual.Atual.LinhaDoTempo.Length);
             await janela.LimparPreviaAsync(); Assert.True(janela.BotaoReproduzirPrevia.IsEnabled);

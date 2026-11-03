@@ -76,7 +76,7 @@ public sealed class TestesDialogoImportacao
 
     private static void Pressionar(UIElement origem, Key tecla)
     {
-        var evento = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(origem)!, Environment.TickCount, tecla)
+        var evento = new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(origem)!, Environment.TickCount, tecla)
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         origem.RaiseEvent(evento);
         Assert.True(evento.Handled);

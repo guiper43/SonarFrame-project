@@ -54,6 +54,7 @@ public partial class JanelaPrincipal
         if (composicaoAtiva && sessao is not null && situacao.Estado == EstadoPrevia.Concluida)
             UltimoQuadro = ExibirQuadroAsync(sessao.Atual.Cursor);
         if ((!navegandoTemporal || situacao.Estado == EstadoPrevia.Erro)
+            && !(composicaoAtiva && preparacaoComposicao is not null && !cancelamentoExplicitoComposicao && situacao.Estado == EstadoPrevia.Vazia)
             && (situacao.Estado != EstadoPrevia.Vazia || situacao.Mensagem is not null)) Anunciar(mensagem);
     }
 

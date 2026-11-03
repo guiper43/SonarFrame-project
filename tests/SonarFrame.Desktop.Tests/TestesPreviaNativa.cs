@@ -18,6 +18,40 @@ public sealed class PreviaNativaFactAttribute : FactAttribute
 public sealed class TestesPreviaNativa
 {
     [PreviaNativaFact]
+    public Task CorteExclusaoEDesfazerAtualizamReproducaoNativa() => TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+    {
+        var pasta = Environment.GetEnvironmentVariable("SONARFRAME_MIDIAS_PREVIA")!;
+        var video = new Midia(Guid.NewGuid(), "Vídeo", Path.Combine(pasta, "origem.mp4"), TipoMidia.Video, TempoMidia.Segundos(8));
+        var projeto = new InserirClipe(video.Id, 0).Aplicar(new RegistrarMidia(video).Aplicar(Projeto.Criar("Edição nativa")));
+        janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+        janela.ExibirProjeto(projeto, salvo: true, caminho: caminho);
+        await janela.ReproduzirComposicaoAsync(false);
+        await janela.NavegarTemporalAsync(System.Windows.Input.Key.None, System.Windows.Input.ModifierKeys.None, TempoMidia.Segundos(3));
+        janela.MenuDividir.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+        Assert.Equal(2, janela.SessaoAtual!.Atual.LinhaDoTempo.Length);
+        Assert.Equal(EstadoPrevia.Vazia, janela.PreviaAtual.Atual.Estado);
+        await janela.NavegarTemporalAsync(System.Windows.Input.Key.None, System.Windows.Input.ModifierKeys.None, TempoMidia.Segundos(2));
+        await janela.NavegarTemporalAsync(System.Windows.Input.Key.None, System.Windows.Input.ModifierKeys.Shift, TempoMidia.Segundos(4));
+        janela.MenuExcluirSelecao.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+        Assert.Equal(TempoMidia.Segundos(6), janela.SessaoAtual.Atual.Duracao);
+        Assert.Equal(TempoMidia.Segundos(4), janela.SessaoAtual.Atual.LinhaDoTempo[1].InicioNaOrigem);
+        await janela.ReproduzirComposicaoAsync(false);
+        Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
+        Assert.Equal(TempoMidia.Segundos(6), janela.PreviaAtual.Atual.Midia!.Duracao);
+        janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+        Assert.Equal(TempoMidia.Segundos(8), janela.SessaoAtual.Atual.Duracao);
+        await janela.ReproduzirComposicaoAsync(false);
+        Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
+        Assert.Equal(TempoMidia.Segundos(8), janela.PreviaAtual.Atual.Midia!.Duracao);
+        janela.MenuRefazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); await janela.UltimaEdicao;
+        await janela.ReproduzirComposicaoAsync(false);
+        Assert.Equal(EstadoPrevia.Reproduzindo, janela.PreviaAtual.Atual.Estado);
+        Assert.Equal(TempoMidia.Segundos(6), janela.PreviaAtual.Atual.Midia!.Duracao);
+        Assert.Equal(projeto.Biblioteca, janela.SessaoAtual.Atual.Biblioteca);
+        await janela.LimparPreviaAsync();
+    }, prazoSegundos: 180);
+
+    [PreviaNativaFact]
     public Task RetomarVideoReordenadoRestauraAudioDoPlayer() => TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
     {
         var pasta = Environment.GetEnvironmentVariable("SONARFRAME_MIDIAS_PREVIA")!;
@@ -28,7 +62,7 @@ public sealed class TestesPreviaNativa
         janela.ExibirProjeto(Projeto.Criar("Ordem e áudio") with { Biblioteca = [video], LinhaDoTempo = [primeiro, segundo] }, salvo: true, caminho: caminho);
         await janela.ReproduzirComposicaoAsync(false);
         janela.LinhaDoTempo.SelectedIndex = 1;
-        janela.BotaoMoverAntes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        janela.MenuMoverAntes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         var prazo = DateTime.UtcNow.AddSeconds(10);
         while (janela.SessaoAtual!.Atual.LinhaDoTempo[0].Id != segundo.Id && DateTime.UtcNow < prazo) await Task.Delay(25);
         Assert.Equal(segundo.Id, janela.SessaoAtual!.Atual.LinhaDoTempo[0].Id);

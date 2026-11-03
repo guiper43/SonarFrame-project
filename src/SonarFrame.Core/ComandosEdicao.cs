@@ -66,6 +66,7 @@ public sealed record MoverClipe(Guid ClipeId, int Destino) : IComandoEdicao
     {
         var indice = p.LinhaDoTempo.FindIndex(c => c.Id == ClipeId);
         if (indice < 0 || Destino < 0 || Destino >= p.LinhaDoTempo.Length) throw new ArgumentException("Destino ou clipe inválido.");
+        if (indice == Destino) return p;
         return p with { LinhaDoTempo = p.LinhaDoTempo.RemoveAt(indice).Insert(Destino, p.LinhaDoTempo[indice]) };
     }
 }

@@ -13,6 +13,7 @@ namespace SonarFrame.Desktop;
 
 public partial class JanelaPrincipal
 {
+    internal Task UltimaEdicao { get; private set; } = Task.CompletedTask;
     private void DescreverMidia(Guid id)
     {
         if (sessao is null) return;
@@ -31,22 +32,33 @@ public partial class JanelaPrincipal
         try { acao(new AcoesEdicao(sessao)); exibirPropriedadesBiblioteca = false; Atualizar(); Anunciar(mensagem); }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException) { Anunciar(e.Message); }
     }
-    private async void DividirNoCursor(object sender, RoutedEventArgs e)
+    private void DividirNoCursor(object sender, RoutedEventArgs e) => UltimaEdicao = DividirNoCursorAsync();
+    private async Task DividirNoCursorAsync()
     {
         if (sessao is null || !await PrepararEdicaoAsync()) return;
         try
         {
             var posicao = sessao.Atual.Cursor;
+            var nome = new AcoesEdicao(sessao).Conteudos().FirstOrDefault(c => !c.EhCamada && c.Inicio < posicao && c.Inicio + c.Duracao > posicao)?.Nome;
             new AcoesEdicao(sessao).DividirNoCursor();
             exibirPropriedadesBiblioteca = false; Atualizar();
-            Anunciar($"Corte realizado em {posicao}.");
+            Anunciar($"Corte realizado em {posicao}. {nome} dividido em Parte 1 e Parte 2.");
         }
         catch (Exception erro) when (erro is ArgumentException or InvalidOperationException) { Anunciar(erro.Message); }
     }
-    private async void ExcluirIntervaloSelecionado(object sender, RoutedEventArgs e)
+    private void ExcluirIntervaloSelecionado(object sender, RoutedEventArgs e) => UltimaEdicao = ExcluirIntervaloSelecionadoAsync();
+    private async Task ExcluirIntervaloSelecionadoAsync()
     {
-        await AplicarAcaoAsync(a => a.ExcluirSelecao(), "Intervalo excluído e lacuna fechada.");
-        NavegadorTemporal.Focus();
+        if (sessao is null || !await PrepararEdicaoAsync()) return;
+        try
+        {
+            var selecao = sessao.Atual.Selecao;
+            new AcoesEdicao(sessao).ExcluirSelecao();
+            exibirPropriedadesBiblioteca = false; Atualizar();
+            FocarConteudoSelecionado();
+            Anunciar($"Intervalo de {selecao!.Inicio} até {selecao.Fim} excluído e lacuna fechada. Posição {sessao.Atual.Cursor}. Duração da composição {sessao.Atual.Duracao}.");
+        }
+        catch (Exception erro) when (erro is ArgumentException or InvalidOperationException) { Anunciar(erro.Message); }
     }
     private async void AlterarVolume(object sender, RoutedEventArgs e)
     {

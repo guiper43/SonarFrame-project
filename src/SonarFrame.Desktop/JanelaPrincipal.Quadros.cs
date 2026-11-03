@@ -134,7 +134,11 @@ public partial class JanelaPrincipal
                 UltimoQuadro = quadro;
                 if (!await quadro) return;
             }
-            if (versao == geracaoNavegacao) { Atualizar(); Anunciar(AnuncioDeslocamento(posicaoAnterior, destino, shift)); }
+            if (versao == geracaoNavegacao)
+            {
+                Atualizar();
+                Anunciar(shift && origem.Atual.Selecao is null ? $"Posição {destino}. Nenhum intervalo selecionado." : AnuncioDeslocamento(posicaoAnterior, destino, shift));
+            }
         }
         catch (OperationCanceledException) when (cancelamento.IsCancellationRequested) { }
         catch (Exception ex) { if (versao == geracaoNavegacao) Anunciar(ex.Message); }

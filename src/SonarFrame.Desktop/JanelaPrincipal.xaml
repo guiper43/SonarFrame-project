@@ -41,7 +41,7 @@
         <TextBlock x:Name="BibliotecaVazia" Text="Sua biblioteca está vazia." Margin="0,6"/>
         <Button x:Name="BotaoAbrirPrevia" Content="Abrir prévia da mídia selecionada" Click="AbrirPreviaSelecionada" IsEnabled="False" AutomationProperties.HelpText="Selecione uma única mídia. Não adiciona à composição."/>
         <Button x:Name="BotaoInserir" Content="Adicionar à linha do tempo" Click="Inserir" IsEnabled="False"/>
-        <Button Content="Inserir antes do clipe selecionado" Click="InserirAntes"/>
+        <Button x:Name="BotaoInserirAntes" Content="Inserir antes do clipe selecionado" Click="InserirAntes"/>
         <Button x:Name="BotaoAdicionarCamada" Content="Adicionar como camada…" Click="AdicionarCamadaIndependente" IsEnabled="False"/>
         <Button x:Name="BotaoLocalizarMidia" Content="Localizar arquivo…" Click="LocalizarMidia"/>
         <Button x:Name="BotaoRemoverMidia" Content="Remover da biblioteca" Click="RemoverDaBiblioteca" IsEnabled="False" AutomationProperties.HelpText="Delete na lista. Preserva os arquivos originais. Control Z desfaz."/>
@@ -76,21 +76,33 @@
       </GroupBox>
      <GroupBox x:Name="RegiaoLinhaDoTempo" KeyboardNavigation.TabNavigation="Continue" KeyboardNavigation.DirectionalNavigation="Contained" Header="3 · Linha do tempo">
       <StackPanel>
-       <Button x:Name="NavegadorTemporal" Content="Posição: 00:00:00.000" HorizontalContentAlignment="Left" PreviewKeyDown="TeclaNavegacaoTemporal" Click="LerPosicao" AutomationProperties.Name="Navegação temporal" AutomationProperties.HelpText="Esquerda/Direita: um quadro. Control e Esquerda/Direita: um segundo. Page Up ou Down: dez segundos. Shift seleciona. Home e End: extremos. Enter vai ao início do elemento selecionado. Espaço reproduz ou pausa a composição."/>
+       <TextBlock x:Name="NavegadorTemporal" Text="Posição: 00:00:00.000"/>
        <TextBlock x:Name="ResumoSelecao" Text="Nenhum intervalo selecionado." Margin="0,4"/>
 
-       <ListBox x:Name="LinhaDoTempo" Height="115" DisplayMemberPath="Rotulo" GotKeyboardFocus="LinhaDoTempoRecebeuFoco" AutomationProperties.Name="Conteúdos da composição em ordem de início no vídeo" AutomationProperties.HelpText="Cima/Baixo seleciona elementos sem sair da lista. Enter vai ao início do elemento selecionado. Espaço reproduz ou pausa a composição. Tab acessa as ações. Esquerda/Direita move o tempo. Home vai ao início e End ao fim do vídeo." SelectionChanged="ConteudoSelecionado">
-        <ListBox.ContextMenu><ContextMenu><MenuItem Header="Mover para o início" Click="MoverParaInicio"/><MenuItem Header="Mover para antes" Click="MoverAntes"/><MenuItem Header="Mover para depois" Click="MoverDepois"/><MenuItem Header="Mover para o fim" Click="MoverParaFim"/></ContextMenu></ListBox.ContextMenu>
+       <ListBox x:Name="LinhaDoTempo" Height="115" DisplayMemberPath="Rotulo" GotKeyboardFocus="LinhaDoTempoRecebeuFoco" AutomationProperties.Name="Conteúdos da composição em ordem de início no vídeo" AutomationProperties.HelpText="Cima/Baixo escolhe o item. Esquerda/Direita move um quadro; Control move um segundo; Shift seleciona. Delete após seleção temporal exclui o intervalo; após Cima/Baixo abre a ação de remover o item. Enter vai ao início do item. Espaço reproduz ou pausa. Shift+F10, Aplicações ou botão direito abre as ações." SelectionChanged="ConteudoSelecionado" PreviewMouseRightButtonDown="SelecionarAlvoMenuTimeline">
+        <ListBox.ContextMenu>
+         <ContextMenu x:Name="MenuTimeline" Opened="MenuTimelineAberto" Closed="MenuTimelineFechado" AutomationProperties.Name="Ações da timeline">
+          <MenuItem x:Name="MenuConsultarTempo" Header="Consultar posição e intervalo" Click="LerPosicao"/>
+          <MenuItem x:Name="MenuDividir" Header="Dividir no cursor" InputGestureText="Ctrl+B" Click="DividirNoCursor"/>
+          <MenuItem x:Name="MenuExcluirSelecao" Header="Excluir intervalo selecionado" Click="ExcluirIntervaloSelecionado"/>
+          <MenuItem x:Name="MenuRemoverComposicao" Header="Remover vídeo da composição" Click="RemoverDaComposicao"/>
+          <Separator/>
+          <MenuItem x:Name="MenuMoverInicio" Header="Mover para o início" Click="MoverParaInicio"/>
+          <MenuItem x:Name="MenuMoverAntes" Header="Mover para antes" Click="MoverAntes"/>
+          <MenuItem x:Name="MenuMoverDepois" Header="Mover para depois" Click="MoverDepois"/>
+          <MenuItem x:Name="MenuMoverFim" Header="Mover para o fim" Click="MoverParaFim"/>
+          <Separator/>
+          <MenuItem x:Name="MenuDesfazer" Header="Desfazer" InputGestureText="Ctrl+Z" Click="Desfazer"/>
+          <MenuItem x:Name="MenuRefazer" Header="Refazer" InputGestureText="Ctrl+Y" Click="Refazer"/>
+         </ContextMenu>
+        </ListBox.ContextMenu>
        </ListBox>
        <WrapPanel>
         <Button x:Name="BotaoPararComposicao" Content="Parar composição" Click="PararComposicao" IsEnabled="False"/>
         <Button x:Name="BotaoReproduzirSelecao" Content="Reproduzir intervalo selecionado" Click="ReproduzirSelecaoComposicao" IsEnabled="False"/>
         <Button x:Name="BotaoCancelarComposicao" Content="Cancelar preparação ou busca" Click="CancelarPreparacaoComposicao" IsEnabled="False"/>
-        <Button x:Name="BotaoRemoverComposicao" Content="Remover elemento da composição" Click="RemoverDaComposicao" IsEnabled="False" AutomationProperties.HelpText="Delete na lista. Fecha o intervalo do clipe e ajusta as camadas; preserva a mídia na biblioteca. Control Z desfaz."/>
        </WrapPanel>
-       <WrapPanel><Button x:Name="BotaoDividir" Content="Dividir no cursor" Click="DividirNoCursor" AutomationProperties.HelpText="Control B" IsEnabled="False"/><Button x:Name="BotaoExcluirSelecao" Content="Excluir intervalo selecionado" Click="ExcluirIntervaloSelecionado" IsEnabled="False"/></WrapPanel>
        <TextBlock x:Name="LinhaDoTempoVazia" Text="A composição está vazia. Adicione um item da biblioteca." Margin="0,6"/>
-       <WrapPanel><Button x:Name="BotaoMoverAntes" Content="Mover para antes" Click="MoverAntes"/><Button x:Name="BotaoMoverDepois" Content="Mover para depois" Click="MoverDepois"/><Button x:Name="BotaoDesfazer" Content="Desfazer" Click="Desfazer"/><Button x:Name="BotaoRefazer" Content="Refazer" Click="Refazer"/></WrapPanel>
       </StackPanel>
      </GroupBox>
      <GroupBox x:Name="RegiaoComandos" KeyboardNavigation.TabNavigation="Continue" KeyboardNavigation.DirectionalNavigation="Contained" Header="5 · Comandos do projeto"><WrapPanel>

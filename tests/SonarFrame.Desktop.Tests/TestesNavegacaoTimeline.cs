@@ -10,6 +10,26 @@ namespace SonarFrame.Desktop.Tests;
 public sealed class TestesNavegacaoTimeline
 {
     [Fact]
+    public Task PageUpEDownNaListaMovemTempoSemTrocarClipe() => TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+    {
+        var midia = new Midia(Guid.NewGuid(), "Cena", "cena.mp4", TipoMidia.Video, TempoMidia.Segundos(25));
+        var projeto = new InserirClipe(midia.Id, 0).Aplicar(new RegistrarMidia(midia).Aplicar(Projeto.Criar("Navegação")));
+        janela.ExibirProjeto(projeto, salvo: true, caminho: caminho);
+        janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+        janela.LinhaDoTempo.SelectedIndex = 0;
+        janela.LinhaDoTempo.UpdateLayout();
+        var item = (ListBoxItem)janela.LinhaDoTempo.ItemContainerGenerator.ContainerFromIndex(0);
+        item.Focus();
+        Pressionar(item, Key.PageDown); await janela.UltimaNavegacaoTemporal;
+        Assert.Equal(TempoMidia.Segundos(10), janela.SessaoAtual!.Atual.Cursor);
+        Assert.Equal(projeto.ItemSelecionadoId, janela.SessaoAtual.Atual.ItemSelecionadoId);
+        Assert.Same(item, FocusManager.GetFocusedElement(janela));
+        Pressionar(item, Key.PageUp); await janela.UltimaNavegacaoTemporal;
+        Assert.Equal(TempoMidia.Zero, janela.SessaoAtual.Atual.Cursor);
+        Assert.False(janela.SessaoAtual.PodeDesfazer);
+    });
+
+    [Fact]
     public Task TimelineOrdenaPorTempoPreservaSelecaoNasAcoesEMoveClipeCorreto() => TestesIntegracaoEditor.ComJanela((janela, caminho) =>
     {
         var sessao = new SessaoEdicao(Projeto.Criar("Ordem temporal"));
@@ -31,13 +51,9 @@ public sealed class TestesNavegacaoTimeline
         janela.LinhaDoTempo.SelectedIndex = 2;
         janela.LinhaDoTempo.Focus();
         Pressionar(janela.LinhaDoTempo, Key.Tab);
-        Assert.Same(janela.BotaoRemoverComposicao, FocusManager.GetFocusedElement(janela));
-        Pressionar(janela.BotaoRemoverComposicao, Key.Tab);
-        Assert.Same(janela.BotaoDividir, FocusManager.GetFocusedElement(janela));
-        Pressionar(janela.BotaoDividir, Key.Tab);
-        Assert.Same(janela.BotaoMoverAntes, FocusManager.GetFocusedElement(janela));
+        Assert.Same(janela.BotaoSalvar, FocusManager.GetFocusedElement(janela));
         Assert.Equal(fotoId, janela.SessaoAtual!.Atual.ItemSelecionadoId);
-        janela.BotaoMoverAntes.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        janela.MenuMoverAntes.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(fotoId, janela.SessaoAtual.Atual.LinhaDoTempo[0].Id);
         Assert.Equal(fotoId, janela.SessaoAtual.Atual.ItemSelecionadoId);
         janela.LinhaDoTempo.SelectedIndex = janela.LinhaDoTempo.Items.Count - 1;
@@ -49,7 +65,7 @@ public sealed class TestesNavegacaoTimeline
 
     private static void Pressionar(UIElement origem, Key tecla)
     {
-        var evento = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(origem)!, Environment.TickCount, tecla)
+        var evento = new KeyEventArgs(new TecladoTeste(), PresentationSource.FromVisual(origem)!, Environment.TickCount, tecla)
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         origem.RaiseEvent(evento);
         Assert.True(evento.Handled);

@@ -11,7 +11,7 @@ public sealed class MenuComAberturaExplicita : Menu
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        if (Keyboard.Modifiers == ModifierKeys.None && e.OriginalSource is MenuItem item)
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.None && e.OriginalSource is MenuItem item)
         {
             var raiz = item;
             while (ItemsControlFromItemContainer(raiz) is MenuItem pai) raiz = pai;

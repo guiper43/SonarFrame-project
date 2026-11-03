@@ -37,7 +37,7 @@ public partial class JanelaPrincipal : Window
         Loaded += (_, _) => BotaoNovo.Focus();
     }
     private FrameworkElement[] Regioes => [RegiaoBiblioteca, RegiaoPropriedades, RegiaoLinhaDoTempo, RegiaoPrevia, RegiaoComandos];
-    private Control[] Destinos => [BotaoAdicionar, Propriedades, NavegadorTemporal, BotaoReproduzirPrevia.IsEnabled ? BotaoReproduzirPrevia : BotaoPrevia, BotaoSalvar];
+    private Control[] Destinos => [BotaoAdicionar, Propriedades, LinhaDoTempo, BotaoReproduzirPrevia.IsEnabled ? BotaoReproduzirPrevia : BotaoPrevia, BotaoSalvar];
     private void Anunciar(string texto)
     {
         Situacao.Text = texto;
@@ -59,6 +59,7 @@ public partial class JanelaPrincipal : Window
             catch (Exception e) { Anunciar("Não foi possível criar o projeto na pasta configurada: " + e.Message); return; }
         }
         sessao = new SessaoEdicao(projeto, salvo);
+        contextoTemporalTimeline = false;
         caminhoProjeto = caminho;
         persistencia = new PersistenciaProjeto(sessao, repositorio, caminhoProjeto);
         TelaInicial.Visibility = Visibility.Collapsed;
@@ -75,6 +76,8 @@ public partial class JanelaPrincipal : Window
         if (sessao is null) return;
         atualizando = true;
         var p = sessao.Atual;
+        var focoTimeline = FocusManager.GetFocusedElement(this) as DependencyObject;
+        var preservarFocoTimeline = focoTimeline is not null && (focoTimeline == LinhaDoTempo || LinhaDoTempo.IsAncestorOf(focoTimeline));
         var idsBiblioteca = Biblioteca.SelectedItems.Cast<Linha>().Select(r => r.Id).ToHashSet();
         var linhasBiblioteca = p.Biblioteca.Select(a => new Linha(a.Id, $"{a.Nome} · {Tipo(a.Tipo)} · {a.Duracao?.ToString() ?? "definir duração na inserção"}")).ToArray();
         if (!Biblioteca.Items.Cast<Linha>().SequenceEqual(linhasBiblioteca))
@@ -82,26 +85,29 @@ public partial class JanelaPrincipal : Window
             Biblioteca.ItemsSource = linhasBiblioteca;
             foreach (var linha in linhasBiblioteca.Where(r => idsBiblioteca.Contains(r.Id))) Biblioteca.SelectedItems.Add(linha);
         }
-        var linhasLinhaDoTempo = new AcoesEdicao(sessao).Conteudos().Select(c => new Linha(c.Id, $"{c.Nome} · início no vídeo {c.Inicio} · fim {c.Inicio + c.Duracao} · duração {c.Duracao} · {(c.EhCamada ? "Camada" : "Sequência")}")).ToArray();
-        if (!LinhaDoTempo.Items.Cast<Linha>().SequenceEqual(linhasLinhaDoTempo)) LinhaDoTempo.ItemsSource = linhasLinhaDoTempo;
+        var linhasLinhaDoTempo = new AcoesEdicao(sessao).Conteudos().Select((c, i) => new Linha(c.Id, $"{c.Nome} · {Tipo(p.Biblioteca.Single(m => m.Id == c.MidiaId).Tipo)} · item {i + 1} · início no vídeo {c.Inicio} · fim {c.Inicio + c.Duracao} · duração {c.Duracao} · {(c.EhCamada ? "Camada" : "Sequência")}")).ToArray();
+        var recriouTimeline = !LinhaDoTempo.Items.Cast<Linha>().SequenceEqual(linhasLinhaDoTempo);
+        if (recriouTimeline) LinhaDoTempo.ItemsSource = linhasLinhaDoTempo;
         LinhaDoTempo.SelectedItem = LinhaDoTempo.Items.Cast<Linha>().FirstOrDefault(r => r.Id == p.ItemSelecionadoId);
+        if (recriouTimeline && preservarFocoTimeline) FocarConteudoSelecionado();
         TituloProjeto.Text = p.Nome;
         Title = $"{p.Nome}{(sessao.TemAlteracoes ? " *" : "")} — sonarFrame";
-        NavegadorTemporal.Content = $"Posição: {p.Cursor} · Duração: {p.Duracao}";
+        NavegadorTemporal.Text = $"Posição: {p.Cursor} · Duração: {p.Duracao}";
         ResumoSelecao.Text = p.Selecao is { } selecao ? $"Seleção: {selecao.Inicio} até {selecao.Fim}" : "Nenhum intervalo selecionado.";
-        AutomationProperties.SetName(NavegadorTemporal, $"Posição {TempoFalado(p.Cursor)}");
+        AutomationProperties.SetName(NavegadorTemporal, p.Selecao is null ? $"Posição {TempoFalado(p.Cursor)}" : $"Posição {p.Cursor}");
         BibliotecaVazia.Visibility = p.Biblioteca.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         LinhaDoTempoVazia.Visibility = p.LinhaDoTempo.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         BotaoInserir.IsEnabled = Biblioteca.SelectedItems.Count > 0;
-        BotaoDesfazer.IsEnabled = sessao.PodeDesfazer; BotaoRefazer.IsEnabled = sessao.PodeRefazer;
-        BotaoExcluirSelecao.IsEnabled = p.Selecao is { } selecionado && selecionado.Fim > selecionado.Inicio;
-        BotaoDividir.IsEnabled = p.LinhaDoTempo.Length > 0;
+        MenuDesfazer.IsEnabled = sessao.PodeDesfazer; MenuRefazer.IsEnabled = sessao.PodeRefazer;
+        MenuExcluirSelecao.IsEnabled = p.Selecao is { } selecionado && selecionado.Fim > selecionado.Inicio;
+        MenuDividir.IsEnabled = p.LinhaDoTempo.Length > 0;
         var conteudoSelecionado = new AcoesEdicao(sessao).Conteudos().SingleOrDefault(c => c.Id == p.ItemSelecionadoId);
         BotaoVolume.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && p.Biblioteca.Single(a => a.Id == conteudoSelecionado.MidiaId).Tipo != TipoMidia.Imagem;
         BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.EhCamada == true;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && p.Duracao > TempoMidia.Zero;
         BotaoRemoverMidia.IsEnabled = Biblioteca.SelectedItems.Count > 0;
-        BotaoRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
+        MenuRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
+        MenuMoverAntes.IsEnabled = MenuMoverDepois.IsEnabled = MenuMoverInicio.IsEnabled = MenuMoverFim.IsEnabled = conteudoSelecionado?.EhCamada == false;
         AtualizarControlesPrevia();
         atualizando = false;
         if (exibirPropriedadesBiblioteca && Biblioteca.SelectedItem is Linha linhaBiblioteca) DescreverMidia(linhaBiblioteca.Id);
@@ -158,9 +164,10 @@ public partial class JanelaPrincipal : Window
         try { sessao.Executar(comando); exibirPropriedadesBiblioteca = false; Atualizar(); return true; }
         catch (Exception ex) { Anunciar(ex.Message); return false; }
     }
-    private async void Inserir(object sender, RoutedEventArgs e)
-        => await InserirNaPosicaoAsync(null);
-    private async void InserirAntes(object sender, RoutedEventArgs e)
+    private void Inserir(object sender, RoutedEventArgs e)
+        => UltimaEdicao = InserirNaPosicaoAsync(null);
+    private void InserirAntes(object sender, RoutedEventArgs e) => UltimaEdicao = InserirAntesAsync();
+    private async Task InserirAntesAsync()
     {
         if (sessao is null || LinhaDoTempo.SelectedItem is not Linha selecionado) { Anunciar("Selecione um clipe da sequência antes de inserir."); return; }
         var indice = sessao.Atual.LinhaDoTempo.Select((c, i) => (c, i)).Where(x => x.c.Id == selecionado.Id).Select(x => x.i).DefaultIfEmpty(-1).Single();
@@ -194,6 +201,7 @@ public partial class JanelaPrincipal : Window
     private void ConteudoSelecionado(object sender, SelectionChangedEventArgs e)
     {
         if (atualizando || sessao is null || LinhaDoTempo.SelectedItem is not Linha linha) return;
+        contextoTemporalTimeline = false;
         exibirPropriedadesBiblioteca = false;
         sessao.SelecionarItem(linha.Id);
         Atualizar();
@@ -213,27 +221,46 @@ public partial class JanelaPrincipal : Window
         if (sessao is null || LinhaDoTempo.SelectedItem is not Linha linha) { Anunciar("Selecione um conteúdo na lista da composição."); return; }
         if (!sessao.Atual.LinhaDoTempo.Any(c => c.Id == linha.Id)) { Anunciar("Use Editar camada para alterar a posição temporal de uma camada."); return; }
         destino = Math.Clamp(destino, 0, sessao.Atual.LinhaDoTempo.Length - 1);
+        if (destino == IndiceClipeSelecionado) { Anunciar($"O conteúdo já está na posição {destino + 1}."); return; }
         if (!await ExecutarAsync(new MoverClipe(linha.Id, destino))) return;
-        LinhaDoTempo.Focus();
-        if (LinhaDoTempo.ItemContainerGenerator.ContainerFromItem(LinhaDoTempo.SelectedItem) is ListBoxItem item) item.Focus();
+        FocarConteudoSelecionado();
         Anunciar($"Conteúdo movido para a posição {destino + 1} de {sessao.Atual.LinhaDoTempo.Length}.");
     }
-    private async void MoverParaInicio(object sender, RoutedEventArgs e) => await MoverAsync(0);
-    private async void MoverParaFim(object sender, RoutedEventArgs e) => await MoverAsync((sessao?.Atual.LinhaDoTempo.Length ?? 1) - 1);
+    private void MoverParaInicio(object sender, RoutedEventArgs e) => UltimaEdicao = MoverAsync(0);
+    private void MoverParaFim(object sender, RoutedEventArgs e) => UltimaEdicao = MoverAsync((sessao?.Atual.LinhaDoTempo.Length ?? 1) - 1);
     private int IndiceClipeSelecionado => sessao is not null && LinhaDoTempo.SelectedItem is Linha linha
         ? Array.FindIndex(sessao.Atual.LinhaDoTempo.ToArray(), c => c.Id == linha.Id) : -1;
-    private async void MoverAntes(object sender, RoutedEventArgs e) => await MoverAsync(IndiceClipeSelecionado - 1);
-    private async void MoverDepois(object sender, RoutedEventArgs e) => await MoverAsync(IndiceClipeSelecionado + 1);
-    private async void Desfazer(object sender, RoutedEventArgs e) { if (sessao?.PodeDesfazer != true || !await PrepararEdicaoAsync()) return; sessao.Desfazer(); Atualizar(); Anunciar("Edição desfeita."); }
-    private async void Refazer(object sender, RoutedEventArgs e) { if (sessao?.PodeRefazer != true || !await PrepararEdicaoAsync()) return; sessao.Refazer(); Atualizar(); Anunciar("Edição refeita."); }
-    private void LerPosicao(object sender, RoutedEventArgs e) => Anunciar(sessao is null ? "Nenhum projeto aberto." : sessao.Atual.Selecao is not null ? sessao.Atual.Cursor.ToString() : $"Atualmente em {TempoFalado(sessao.Atual.Cursor)}.");
+    private void MoverAntes(object sender, RoutedEventArgs e) => UltimaEdicao = MoverAsync(IndiceClipeSelecionado - 1);
+    private void MoverDepois(object sender, RoutedEventArgs e) => UltimaEdicao = MoverAsync(IndiceClipeSelecionado + 1);
+    private void Desfazer(object sender, RoutedEventArgs e) => UltimaEdicao = RestaurarEdicaoAsync(false);
+    private void Refazer(object sender, RoutedEventArgs e) => UltimaEdicao = RestaurarEdicaoAsync(true);
+    private async Task RestaurarEdicaoAsync(bool refazer)
+    {
+        if (sessao is null) return;
+        if (!(refazer ? sessao.PodeRefazer : sessao.PodeDesfazer)) { Anunciar(refazer ? "Nenhuma edição para refazer." : "Nenhuma edição para desfazer."); return; }
+        if (!await PrepararEdicaoAsync()) return;
+        if (refazer) sessao.Refazer(); else sessao.Desfazer();
+        Atualizar();
+        Anunciar($"Edição {(refazer ? "refeita" : "desfeita")}. {sessao.Atual.LinhaDoTempo.Length} clipe(s) na sequência. Posição {sessao.Atual.Cursor}. Duração {sessao.Atual.Duracao}. {ResumoSelecao.Text}");
+    }
+    private void FocarConteudoSelecionado()
+    {
+        LinhaDoTempo.Focus();
+        if (LinhaDoTempo.SelectedItem is not { } selecionado) return;
+        LinhaDoTempo.ScrollIntoView(selecionado); LinhaDoTempo.UpdateLayout();
+        if (LinhaDoTempo.ItemContainerGenerator.ContainerFromItem(selecionado) is ListBoxItem item) item.Focus();
+    }
+    private void LerPosicao(object sender, RoutedEventArgs e) => Anunciar(sessao is null ? "Nenhum projeto aberto." : sessao.Atual.Selecao is { } selecao
+        ? $"Posição {sessao.Atual.Cursor}. Intervalo selecionado de {selecao.Inicio} até {selecao.Fim}. Duração {selecao.Fim - selecao.Inicio}."
+        : $"Atualmente em {TempoFalado(sessao.Atual.Cursor)}. Nenhum intervalo selecionado.");
     private void TeclaNavegacaoTemporal(object sender, KeyEventArgs e)
     {
-        if (sessao is null || Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) return;
+        if (sessao is null || e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Alt)) return;
         if (e.Key is Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown)
         {
+            contextoTemporalTimeline = true;
             e.Handled = true;
-            UltimaNavegacaoTemporal = NavegarTemporalAsync(e.Key, Keyboard.Modifiers);
+            UltimaNavegacaoTemporal = NavegarTemporalAsync(e.Key, e.KeyboardDevice.Modifiers);
         }
         else if (e.Key == Key.Space) { e.Handled = true; AlternarComposicao(sender, e); }
         else if (e.Key == Key.Delete) { e.Handled = true; ExcluirIntervaloSelecionado(sender, e); }
@@ -247,7 +274,7 @@ public partial class JanelaPrincipal : Window
     }
     private void TeclaTelaInicial(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.Up or Key.Down) || e.OriginalSource is not Button origem) return;
+        if (e.KeyboardDevice.Modifiers != ModifierKeys.None || e.Key is not (Key.Up or Key.Down) || e.OriginalSource is not Button origem) return;
         var botoes = TelaInicial.Children.OfType<Button>().Concat(OpcoesAjudaInicial.Children.OfType<Button>())
             .Where(b => b.IsEnabled && b.IsVisible).ToArray();
         var indice = Array.IndexOf(botoes, origem);
@@ -259,20 +286,20 @@ public partial class JanelaPrincipal : Window
     {
         var chave = e.Key == Key.System ? e.SystemKey : e.Key;
         if (chave == Key.F1) { Ajuda(sender, e); e.Handled = true; return; }
-        if (Keyboard.Modifiers == ModifierKeys.Control && chave == Key.S) { SalvarProjeto(sender, e); e.Handled = true; return; }
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.Control && chave == Key.S) { SalvarProjeto(sender, e); e.Handled = true; return; }
         if (Editor.Visibility != Visibility.Visible) return;
-        if (Keyboard.FocusedElement is not TextBox && Keyboard.Modifiers == ModifierKeys.Control)
+        if (e.OriginalSource is not TextBox && Keyboard.FocusedElement is not TextBox && e.KeyboardDevice.Modifiers == ModifierKeys.Control)
         {
             if (chave == Key.Z) { Desfazer(sender, e); e.Handled = true; return; }
             if (chave == Key.Y) { Refazer(sender, e); e.Handled = true; return; }
             if (chave == Key.B) { DividirNoCursor(sender, e); e.Handled = true; return; }
         }
         var indice = -1;
-        if (Keyboard.Modifiers == ModifierKeys.Alt && chave >= Key.D1 && chave <= Key.D5) indice = chave - Key.D1;
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.Alt && chave >= Key.D1 && chave <= Key.D5) indice = chave - Key.D1;
         if (chave == Key.F6)
         {
             var atual = Array.FindIndex(Regioes, r => r.IsKeyboardFocusWithin);
-            var reverso = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            var reverso = e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Shift);
             indice = atual < 0 ? (reverso ? 4 : 0) : (atual + (reverso ? 4 : 1)) % 5;
         }
         if (indice >= 0) { Destinos[indice].Focus(); Destinos[indice].BringIntoView(); e.Handled = true; }
@@ -346,7 +373,7 @@ public partial class JanelaPrincipal : Window
         dialogo.Loaded += (_, _) => { entrada.Focus(); entrada.SelectAll(); };
         dialogo.ShowDialog(); return resultado;
     }
-    private void InformacoesPrevia(object sender, RoutedEventArgs e) => Anunciar("Use Reproduzir ou Pausar na área do vídeo. Espaço na timeline ou no controle temporal reproduz a montagem. A prévia inclui camadas de áudio, vídeo e imagens. Consultar prévia informa a posição e as camadas ativas.");
+    private void InformacoesPrevia(object sender, RoutedEventArgs e) => Anunciar("Use Reproduzir ou Pausar na área do vídeo. Espaço na timeline reproduz a montagem. A prévia inclui camadas de áudio, vídeo e imagens. Consultar prévia informa a posição e as camadas ativas.");
     private void Sobre(object sender, RoutedEventArgs e)
     {
         var versao = typeof(App).Assembly.GetName().Version!;
@@ -358,7 +385,7 @@ public partial class JanelaPrincipal : Window
         Cima / Baixo na biblioteca: selecionar arquivos sem sair da lista. Enter: abrir prévia. Delete: remover da biblioteca.
         Esquerda / Direita na linha do tempo: mover o cursor temporal.
         Alt+1: biblioteca. Alt+2: propriedades.
-        Alt+3: navegação temporal. Alt+4: prévia.
+        Alt+3: timeline. Alt+4: prévia.
         Alt+5: comandos do projeto.
         F6 / Shift+F6: alternar entre as cinco regiões.
         Ctrl+S: salvar. Escape: fechar diálogos e menus.
@@ -377,11 +404,11 @@ public partial class JanelaPrincipal : Window
         Cima / Baixo: navegar nas opções quando aberto.
         Escape: fechar o menu.
 
-        No controle Navegação temporal:
+        Na lista da timeline:
         Esquerda / Direita: um quadro. Ctrl+Esquerda / Direita: um segundo.
         Page Up/Down: dez segundos. Home/End: extremos.
         Shift com esses atalhos: selecionar intervalo.
-        Delete: excluir o intervalo selecionado.
+        Delete após seleção temporal: excluir o intervalo. Após Cima/Baixo: abrir a ação de remover o item.
 
         Na timeline: Cima / Baixo seleciona elementos em ordem de início no vídeo; Enter vai ao início do elemento selecionado; Espaço reproduz ou pausa a composição; Tab acessa as ações. Esquerda / Direita move o tempo; Home vai ao início e End ao fim da composição; Shift+F10 abre o menu.
         Na biblioteca: Ctrl e Shift permitem seleção múltipla.
@@ -395,6 +422,6 @@ public partial class JanelaPrincipal : Window
         Use os botões Reproduzir/Pausar, Parar e Buscar e pausar.
         Espaço nos botões mantém sua ativação nativa.
         Imagens isoladas não oferecem controles temporais.
-        Reproduzir e Pausar usam o mesmo botão na área do vídeo. Na timeline: Parar, Reproduzir intervalo e Cancelar preparação ou busca. Espaço na lista da composição ou no controle temporal alterna reprodução. Delete na lista remove o elemento da composição. Camadas de áudio, vídeo e imagens são reproduzidas na composição. A exportação ainda não está disponível.
+        Reproduzir e Pausar usam o mesmo botão na área do vídeo. Na timeline: Parar, Reproduzir intervalo e Cancelar preparação ou busca. Espaço na lista da composição alterna reprodução. Shift+F10, Aplicações ou botão direito abre consulta, divisão, exclusão, remoção, reordenação e histórico. Escape retorna à timeline. Camadas de áudio, vídeo e imagens são reproduzidas na composição. A exportação ainda não está disponível.
         """);
 }

@@ -6,6 +6,21 @@ namespace SonarFrame.Tests;
 
 public class TestesEdicao
 {
+    [Fact]
+    public void MoverParaMesmaPosicaoPreservaHistoricoERefazer()
+    {
+        var s = new SessaoEdicao(Sessao().Atual);
+        var antes = s.Atual;
+        s.Executar(new MoverClipe(antes.LinhaDoTempo[0].Id, 0));
+        Assert.Same(antes, s.Atual);
+        Assert.False(s.PodeDesfazer);
+        s.Executar(new DividirClipe(antes.LinhaDoTempo[0].Id, Segundos(4)));
+        s.Desfazer();
+        s.Executar(new MoverClipe(antes.LinhaDoTempo[0].Id, 0));
+        Assert.True(s.PodeRefazer);
+        s.Refazer();
+        Assert.Equal(2, s.Atual.LinhaDoTempo.Length);
+    }
     internal static TempoMidia Segundos(long valor) => TempoMidia.Segundos(valor);
     internal static Midia Video(long segundos = 10) => new(Guid.NewGuid(), "Vídeo", "original.mp4", TipoMidia.Video, Segundos(segundos), new(30000, 1001));
     internal static SessaoEdicao Sessao()

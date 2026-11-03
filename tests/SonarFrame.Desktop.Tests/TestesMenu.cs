@@ -160,10 +160,10 @@ public sealed class TestesMenu
     private static void Pressionar(UIElement item, Key tecla)
     {
         var origem = PresentationSource.FromVisual(item) ?? PresentationSource.FromVisual(Window.GetWindow(item));
-        var evento = new KeyEventArgs(Keyboard.PrimaryDevice, origem!, Environment.TickCount, tecla)
+        var evento = new KeyEventArgs(new TecladoTeste(), origem!, Environment.TickCount, tecla)
         { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         item.RaiseEvent(evento);
-        Assert.True(evento.Handled);
+        Assert.True(evento.Handled, $"Tecla {tecla}; modificadores {Keyboard.Modifiers}; origem {item}; visível {item.IsVisible}.");
     }
 
     [Fact]

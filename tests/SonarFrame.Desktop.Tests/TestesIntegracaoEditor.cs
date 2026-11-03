@@ -16,18 +16,18 @@ public sealed class TestesIntegracaoEditor
     {
         janela.ExibirProjeto(Amostra(), caminho: caminho);
         var sessao = janela.SessaoAtual!;
-        Assert.False(janela.BotaoExcluirSelecao.IsEnabled);
+        Assert.False(janela.MenuExcluirSelecao.IsEnabled);
         sessao.Posicionar(TempoMidia.Segundos(4)); janela.Atualizar();
-        janela.BotaoDividir.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        janela.MenuDividir.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length); Assert.Equal(2, janela.LinhaDoTempo.Items.Count);
         sessao.Posicionar(TempoMidia.Segundos(2)); sessao.Posicionar(TempoMidia.Segundos(6), true); janela.Atualizar();
-        Assert.True(janela.BotaoExcluirSelecao.IsEnabled);
-        janela.BotaoExcluirSelecao.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao); Assert.False(janela.BotaoExcluirSelecao.IsEnabled);
-        janela.BotaoDesfazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(janela.MenuExcluirSelecao.IsEnabled);
+        janela.MenuExcluirSelecao.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+        Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao); Assert.False(janela.MenuExcluirSelecao.IsEnabled);
+        janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(TempoMidia.Segundos(10), sessao.Atual.Duracao);
-        Assert.True(janela.BotaoRefazer.IsEnabled);
-        janela.BotaoRefazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(janela.MenuRefazer.IsEnabled);
+        janela.MenuRefazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao);
         Assert.True(await janela.SalvarAtualAsync()); Assert.False(sessao.TemAlteracoes);
         var salvo = await new RepositorioProjetosSqlite().CarregarAsync(caminho);
@@ -47,7 +47,7 @@ public sealed class TestesIntegracaoEditor
         janela.BotaoRemoverCamada.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.Single(janela.SessaoAtual!.Atual.LinhaDoTempo); Assert.Empty(janela.SessaoAtual.Atual.Camadas);
         Assert.False(janela.BotaoEditarCamada.IsEnabled);
-        janela.BotaoDesfazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Single(janela.SessaoAtual.Atual.Camadas); Assert.True(janela.BotaoEditarCamada.IsEnabled);
         Assert.True(await janela.SalvarAtualAsync());
         var salvo = await new RepositorioProjetosSqlite().CarregarAsync(caminho);

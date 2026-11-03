@@ -32,7 +32,7 @@ public sealed class DialogoImportacao : Window
         AutomationProperties.SetHelpText(guias, "Use as setas para selecionar o tipo. Tab acessa Selecionar arquivos.");
         guias.PreviewKeyDown += (_, e) =>
         {
-            if (e.OriginalSource is not TabItem || Keyboard.Modifiers != ModifierKeys.None) return;
+            if (e.OriginalSource is not TabItem || e.KeyboardDevice.Modifiers != ModifierKeys.None) return;
             if (e.Key is Key.Up or Key.Left or Key.Down or Key.Right)
             {
                 var direcao = e.Key is Key.Up or Key.Left ? -1 : 1;
