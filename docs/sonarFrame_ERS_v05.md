@@ -317,7 +317,13 @@ O sonarFrame deverá oferecer importação de mídias, prévia, organização de
 - **DT04 — Acessibilidade:** controles WPF e UI Automation; linha do tempo personalizada com `AutomationPeer` e notificação de posição temporal quando adequada; atalhos implementáveis com mecanismos próprios do WPF.
 - **DT05 — IA opcional:** integrações externas por API condicionadas à habilitação e configuração; ações de edição sob controle do usuário; armazenamento seguro de credenciais.
 
-### 6.2 Escolhas técnicas ainda não fechadas
+### 6.2 Registro de implementação e escolhas técnicas
+
+Atualização documental de 07/11/2026, baseada em `bcc6fa9` na branch `feat/reproducao-e-previa`: .NET 10; LibVLCSharp/WPF no Desktop; FFmpeg/FFprobe por processos externos com argumentos estruturados; SQLite com `user_version = 1` e snapshot JSON na tabela `project`; extensão `.sonarframe`; pasta padrão `Documentos/sonarFrame`, configurável. O Desktop usa Microsoft.Extensions.DependencyInjection/Hosting conforme [ADR 0001](adr/0001-injecao-de-dependencias.md). Essas escolhas já existem no código; o aceite completo com NVDA e em máquina limpa continua externo.
+
+O instalador e o perfil concreto de exportação final permanecem pendentes. A lista abaixo preserva as alternativas da especificação original para contexto histórico; itens já implementados não devem ser reabertos como backlog sem nova decisão. Veja [estado funcional e próximas features](auditoria-documentacao-e-proximas-features.md).
+
+#### Alternativas registradas na versão original
 
 As seguintes decisões **não** são tratadas como requisitos já aprovados:
 
@@ -406,6 +412,8 @@ A redação foi revisada segundo boas práticas de engenharia de requisitos, con
 A adoção do nome no projeto **não equivale a uma verificação de disponibilidade de marca, domínio ou registro**. Antes de disponibilizar o produto comercialmente, realizar pesquisas de anterioridade e avaliar registro da marca e uso do símbolo. A proposta de logotipo deverá ser validada quanto a escalabilidade, contraste e identificação por pessoas com e sem deficiência visual.
 
 ## 11. Histórico de versões
+
+- **Revisão documental — 07/11/2026:** registro das escolhas técnicas já implementadas na branch de reprodução; requisitos funcionais e identificadores preservados. Não representa nova versão funcional da ERS nem aceite de release.
 
 - **v0.2 — 14/10/2026:** documento-base de trabalho, com RF01–RF06, RF07 não recuperado e diretrizes técnicas iniciais.
 - **v0.3 — 18/10/2026:** consolidação de decisões anteriormente recuperadas; diversos pontos ainda em refinamento.

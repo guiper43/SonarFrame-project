@@ -43,9 +43,10 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
     }, token);
 
     private async Task RenderizarBlocoAsync(Projeto projeto, Dictionary<Guid, Metadados> metadados,
-        int larguraQuadro, int alturaQuadro, string destino, long disponivel, bool somenteAudio, CancellationToken token)
+        int larguraQuadro, int alturaQuadro, string destino, long disponivel, bool somenteAudio, CancellationToken token, PerfilVideo? perfil = null, Action<TempoMidia>? progresso = null)
     {
-        if (!somenteAudio) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
+        perfil ??= PerfilVideo.Previa;
+        if (!somenteAudio && !perfil.Exportacao) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
         var fontes = Fontes(projeto);
         var argumentos = new List<string> { "-hide_banner", "-v", "error", "-nostdin", "-y" };
         var filtrosVideo = new StringBuilder();
@@ -79,7 +80,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             origem -= buscas[entrada];
             primeiro -= buscas[entrada];
             var duracao = Segundos(clipe.Duracao);
-            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{Escala(larguraQuadro, alturaQuadro, transparente)},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao},setpts=PTS+{Segundos(inicio)}/TB";
+            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{(perfil.Preencher && !transparente ? Preenchimento(larguraQuadro, alturaQuadro) : Escala(larguraQuadro, alturaQuadro, transparente))},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao},setpts=PTS+{Segundos(inicio)}/TB";
         }
         filtrosVideo.Append($"color=c=black:s={larguraQuadro}x{alturaQuadro}:r=30:d={Segundos(projeto.Duracao)},setsar=1[vbase];");
         var visualAtual = "vbase";
@@ -130,11 +131,16 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         foreach (var audio in audios) filtrosAudio.Append($"[{audio}]");
         filtrosAudio.Append($"amix=inputs={audios.Count}:duration=first:normalize=0:dropout_transition=0,atrim=duration={Segundos(projeto.Duracao)}[a]");
         var script = Path.Combine(pasta, "filtros.txt");
-        await File.WriteAllTextAsync(script, (somenteAudio ? filtrosAudio : filtrosVideo).ToString().TrimEnd(';'), token);
-        argumentos.AddRange(["-filter_complex_threads", "1", "-/filter_complex", script, "-map", somenteAudio ? "[a]" : "[v]", "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "23", "-c:a", "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
-        await ExecutarAsync(argumentos, token);
+        var filtros = perfil.Exportacao ? filtrosVideo.ToString() + filtrosAudio : (somenteAudio ? filtrosAudio : filtrosVideo).ToString();
+        await File.WriteAllTextAsync(script, filtros.TrimEnd(';'), token);
+        if (perfil.Threads > 0) argumentos.AddRange(["-filter_complex_threads", "1"]);
+        argumentos.AddRange(["-/filter_complex", script, "-map", somenteAudio ? "[a]" : "[v]", "-c:v", "libx264"]);
+        if (perfil.Exportacao) argumentos.AddRange(["-map", "[a]", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:2", "-nostats"]);
+        if (perfil.Threads > 0) argumentos.AddRange(["-threads", perfil.Threads.ToString(CultureInfo.InvariantCulture)]);
+        argumentos.AddRange(["-preset", perfil.Preset, "-crf", perfil.Crf.ToString(CultureInfo.InvariantCulture), "-c:a", perfil.Exportacao ? "aac" : "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
+        await ExecutarAsync(argumentos, token, perfil.Exportacao, progresso);
         if (new FileInfo(destino).Length >= disponivel - 1024 * 1024)
-            throw new IOException("A preparação excedeu o limite de cache. Reduza a composição para reproduzir.");
+            throw new IOException(perfil.Exportacao ? "Sem espaço em disco para exportar. Libere espaço e tente novamente." : "A preparação excedeu o limite de cache. Reduza a composição para reproduzir.");
     }
 
     private async Task<Dictionary<Guid, Metadados>> LerMetadadosAsync(Midia[] fontes, IProgress<string>? progresso, CancellationToken token)
@@ -195,6 +201,8 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
 
     private static string Escala(int larguraQuadro, int alturaQuadro, bool transparente) => $"scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,scale={larguraQuadro}:{alturaQuadro}:force_original_aspect_ratio=decrease:force_divisible_by=2,format={(transparente ? "rgba" : "yuv420p")},pad={larguraQuadro}:{alturaQuadro}:(ow-iw)/2:(oh-ih)/2:color={(transparente ? "black@0" : "black")}";
 
+    private static string Preenchimento(int larguraQuadro, int alturaQuadro) => $"scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,scale={larguraQuadro}:{alturaQuadro}:force_original_aspect_ratio=increase,crop={larguraQuadro}:{alturaQuadro},setsar=1,format=yuv420p";
+
     private static string Segundos(TempoMidia tempo) => ((decimal)tempo.Numerador / tempo.Denominador).ToString("0.#########", CultureInfo.InvariantCulture);
 
     private void PrepararPasta()
@@ -224,26 +232,35 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         usoCache = new FileStream(Path.Combine(pasta, "em-uso"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
     }
 
-    private async Task ExecutarAsync(IEnumerable<string> argumentos, CancellationToken token)
+    private async Task ExecutarAsync(IEnumerable<string> argumentos, CancellationToken token, bool exportacao = false, Action<TempoMidia>? progresso = null)
     {
         token.ThrowIfCancellationRequested();
         var inicio = new ProcessStartInfo(ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
         foreach (var argumento in argumentos) inicio.ArgumentList.Add(argumento);
         var criacao = Stopwatch.StartNew();
-        using var processo = IniciarFfmpeg(inicio);
+        using var processo = IniciarFfmpeg(inicio, exportacao);
         if (medicaoAtual.Value is { } medicao)
         {
             medicao.CriacaoProcessosFfmpegMs += criacao.Elapsed.TotalMilliseconds;
             medicao.ProcessosFfmpeg++;
         }
-        var erros = processo.StandardError.ReadToEndAsync();
+        var erros = progresso is null ? processo.StandardError.ReadToEndAsync() : LerProgressoExportacaoAsync(processo.StandardError, progresso);
         try
         {
-            await processo.WaitForExitAsync(token);
+            var fim = processo.WaitForExitAsync(token);
+            var concluida = await Task.WhenAny(fim, erros);
+            await concluida;
+            await fim;
             var erro = await erros;
+            token.ThrowIfCancellationRequested();
             if (processo.ExitCode != 0 && erro.Contains("No space left on device", StringComparison.OrdinalIgnoreCase))
-                throw new IOException("Sem espaço para preparar a prévia. Libere espaço no disco de arquivos temporários e tente novamente.");
-            if (processo.ExitCode != 0) throw new InvalidOperationException("Falha ao preparar composição: " + erro[..Math.Min(erro.Length, 1500)]);
+                throw new IOException(exportacao ? "Sem espaço em disco para exportar. Libere espaço e tente novamente."
+                    : "Sem espaço para preparar a prévia. Libere espaço no disco de arquivos temporários e tente novamente.");
+            if (processo.ExitCode != 0)
+            {
+                var detalhe = string.IsNullOrWhiteSpace(erro) ? $"O FFmpeg encerrou com código {processo.ExitCode}." : erro[..Math.Min(erro.Length, 1500)];
+                throw new InvalidOperationException((exportacao ? "Falha ao exportar o vídeo: " : "Falha ao preparar composição: ") + detalhe);
+            }
         }
         finally
         {
@@ -252,10 +269,10 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         }
     }
 
-    private static Process IniciarFfmpeg(ProcessStartInfo inicio)
+    private static Process IniciarFfmpeg(ProcessStartInfo inicio, bool exportacao = false)
     {
         try { return Process.Start(inicio) ?? throw new InvalidOperationException("Não foi possível iniciar o FFmpeg da instalação."); }
-        catch (Win32Exception ex) { throw new InvalidOperationException("Não foi possível iniciar a reprodução. Verifique se o FFmpeg acompanha a instalação do sonarFrame.", ex); }
+        catch (Win32Exception ex) { throw new InvalidOperationException($"Não foi possível iniciar a {(exportacao ? "exportação" : "reprodução")}. Verifique se o FFmpeg acompanha a instalação do sonarFrame.", ex); }
     }
 
     public async ValueTask DisposeAsync()

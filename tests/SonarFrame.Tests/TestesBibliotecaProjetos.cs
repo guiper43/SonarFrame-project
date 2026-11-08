@@ -6,6 +6,38 @@ namespace SonarFrame.Tests;
 
 public sealed class TestesBibliotecaProjetos : IDisposable
 {
+    [Fact]
+    public void DownloadsRespeitaLocalizacaoRedirecionadaSemCriarPasta()
+    {
+        var redirecionada = Path.Combine(diretorio, "outro-volume", "Recebidos");
+        Assert.Equal(redirecionada, PastasUsuario.ResolverDownloads(() => redirecionada));
+        Assert.False(Directory.Exists(redirecionada));
+        Assert.Throws<IOException>(() => PastasUsuario.ResolverDownloads(() => "relative"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConfiguracaoAntigaPreservaProjetosEResolveConflitoComDownloads(bool projetosEmDownloads)
+    {
+        var projetos = projetosEmDownloads ? ConfiguracoesDesktop.PastaDownloadsPadrao : diretorio;
+        var arquivo = Path.Combine(diretorio, "settings-antigo.json");
+        var original = System.Text.Json.JsonSerializer.Serialize(new { ProjectsDirectory = projetos });
+        File.WriteAllText(arquivo, original);
+        var repositorio = new RepositorioConfiguracoes(arquivo);
+        var configuracoes = repositorio.Carregar();
+        Assert.Equal(projetos, configuracoes.DiretorioProjetos);
+        Assert.Equal(projetosEmDownloads ? Path.Combine(projetos, "sonarFrame-exportacoes") : ConfiguracoesDesktop.PastaDownloadsPadrao,
+            configuracoes.DiretorioExportacoes);
+        Assert.False(ConfiguracoesDesktop.MesmaPasta(projetos, configuracoes.DiretorioExportacoes));
+        Assert.Equal(original, File.ReadAllText(arquivo));
+        repositorio.Salvar(configuracoes);
+        Assert.Equal(configuracoes, repositorio.Carregar());
+        using var documento = System.Text.Json.JsonDocument.Parse(File.ReadAllText(arquivo));
+        Assert.Equal(projetos, documento.RootElement.GetProperty("ProjectsDirectory").GetString());
+        Assert.Equal(configuracoes.DiretorioExportacoes, documento.RootElement.GetProperty("ExportsDirectory").GetString());
+    }
+
     private readonly string diretorio = Path.Combine(AppContext.BaseDirectory, "catalog-tests", Guid.NewGuid().ToString("N"));
     public TestesBibliotecaProjetos() => Directory.CreateDirectory(diretorio);
     public void Dispose() => Directory.Delete(diretorio, true);
@@ -29,9 +61,15 @@ public sealed class TestesBibliotecaProjetos : IDisposable
     {
         var arquivo = Path.Combine(diretorio, "original.sonarframe"); File.WriteAllText(arquivo, "original");
         var repositorio = new RepositorioConfiguracoes(Path.Combine(diretorio, "config", "settings.json"));
-        var configuracoes = new ConfiguracoesDesktop(Path.Combine(diretorio, "another")); repositorio.Salvar(configuracoes);
+        var pastaProjetos = Path.Combine(diretorio, "another");
+        var pastaExportacoes = Path.Combine(diretorio, "exports");
+        var configuracoes = new ConfiguracoesDesktop(pastaProjetos, pastaExportacoes); repositorio.Salvar(configuracoes);
         Assert.Equal(configuracoes, repositorio.Carregar()); Assert.Equal("original", File.ReadAllText(arquivo));
+        Assert.Equal(ConfiguracoesDesktop.PastaDownloadsPadrao, ConfiguracoesDesktop.Padrao.DiretorioExportacoes);
+        Assert.False(ConfiguracoesDesktop.MesmaPasta(ConfiguracoesDesktop.Padrao.DiretorioProjetos, ConfiguracoesDesktop.Padrao.DiretorioExportacoes));
         Assert.Throws<ArgumentException>(() => repositorio.Salvar(new ConfiguracoesDesktop("relative")));
+        Assert.Throws<ArgumentException>(() => repositorio.Salvar(new ConfiguracoesDesktop(pastaProjetos, "relative")));
+        Assert.Throws<ArgumentException>(() => repositorio.Salvar(new ConfiguracoesDesktop(pastaProjetos, pastaProjetos)));
     }
     [Fact] public void CaminhosDeNovosProjetosSaoUnicosEPermanecemNoDiretorioConfigurado()
     {

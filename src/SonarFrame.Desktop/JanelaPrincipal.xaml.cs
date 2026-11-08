@@ -37,6 +37,7 @@ public partial class JanelaPrincipal : Window
         IFabricaReprodutorMidia fabricaPrevia,
         PreviaBiblioteca previa,
         IPreparadorComposicao preparadorComposicao,
+        IExportador exportador,
         TimeProvider relogio)
     {
         ArgumentNullException.ThrowIfNull(repositorio);
@@ -46,6 +47,7 @@ public partial class JanelaPrincipal : Window
         ArgumentNullException.ThrowIfNull(fabricaPrevia);
         ArgumentNullException.ThrowIfNull(previa);
         ArgumentNullException.ThrowIfNull(preparadorComposicao);
+        ArgumentNullException.ThrowIfNull(exportador);
         ArgumentNullException.ThrowIfNull(relogio);
         this.repositorio = repositorio;
         this.leitorMetadados = leitorMetadados;
@@ -53,13 +55,15 @@ public partial class JanelaPrincipal : Window
         this.catalogoProjetos = catalogoProjetos;
         this.relogio = relogio;
         InitializeComponent();
+        MenuTimeline.AddHandler(Keyboard.KeyDownEvent, new KeyEventHandler(TeclaMenuTimeline), true);
         ConfigurarPrevia(previa, fabricaPrevia);
         ConfigurarComposicao(preparadorComposicao);
+        ConfigurarExportacao(exportador);
         ConfigurarCicloDeVida();
         Loaded += (_, _) => BotaoNovo.Focus();
     }
     private FrameworkElement[] Regioes => [RegiaoBiblioteca, RegiaoPropriedades, RegiaoLinhaDoTempo, RegiaoPrevia, RegiaoComandos];
-    private Control[] Destinos => [BotaoAdicionar, Propriedades, LinhaDoTempo, BotaoReproduzirPrevia.IsEnabled ? BotaoReproduzirPrevia : BotaoPrevia, BotaoSalvar];
+    private Control[] Destinos => [BotaoAdicionar, Propriedades, LinhaDoTempo, BotaoReproduzirPrevia.IsEnabled ? BotaoReproduzirPrevia : BotaoPrevia, exportacaoEmAndamento ? BotaoProgressoExportacao : BotaoSalvar];
     private void Anunciar(string texto)
     {
         Situacao.Text = texto;
@@ -88,6 +92,8 @@ public partial class JanelaPrincipal : Window
         Editor.Visibility = Visibility.Visible;
         mensagensRecentes.Clear();
         exibirPropriedadesBiblioteca = false;
+
+        ReiniciarEstadoExportacao();
         Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
         Atualizar();
         BotaoAdicionar.Focus();
@@ -131,6 +137,7 @@ public partial class JanelaPrincipal : Window
         MenuRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
         MenuMoverAntes.IsEnabled = MenuMoverDepois.IsEnabled = MenuMoverInicio.IsEnabled = MenuMoverFim.IsEnabled = conteudoSelecionado?.EhCamada == false;
         AtualizarControlesPrevia();
+        AtualizarControlesExportacao();
         atualizando = false;
         if (exibirPropriedadesBiblioteca && Biblioteca.SelectedItem is Linha linhaBiblioteca) DescreverMidia(linhaBiblioteca.Id);
         else if (conteudoSelecionado is not null) DescreverConteudo(conteudoSelecionado);
@@ -171,7 +178,7 @@ public partial class JanelaPrincipal : Window
     }
     private async void SalvarProjeto(object sender, RoutedEventArgs e)
     {
-        if (!Ocupado) await SalvarAtualAsync();
+        if (!PersistenciaOcupada) await SalvarAtualAsync();
     }
     private async void IrParaInicio(object sender, RoutedEventArgs e)
     {
@@ -212,6 +219,7 @@ public partial class JanelaPrincipal : Window
     {
         if (atualizando || sessao is null) return;
         AtualizarControlesPrevia();
+        AtualizarControlesExportacao();
         exibirPropriedadesBiblioteca = true;
         BotaoInserir.IsEnabled = Biblioteca.SelectedItems.Count > 0;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && sessao.Atual.Duracao > TempoMidia.Zero;
@@ -225,6 +233,7 @@ public partial class JanelaPrincipal : Window
         if (atualizando || sessao is null || LinhaDoTempo.SelectedItem is not Linha linha) return;
         contextoTemporalTimeline = false;
         exibirPropriedadesBiblioteca = false;
+
         sessao.SelecionarItem(linha.Id);
         Atualizar();
     }
@@ -310,6 +319,8 @@ public partial class JanelaPrincipal : Window
         if (chave == Key.F1) { Ajuda(sender, e); e.Handled = true; return; }
         if (e.KeyboardDevice.Modifiers == ModifierKeys.Control && chave == Key.S) { SalvarProjeto(sender, e); e.Handled = true; return; }
         if (Editor.Visibility != Visibility.Visible) return;
+        if (exportacaoEmAndamento && chave == Key.Escape && e.KeyboardDevice.Modifiers == ModifierKeys.None) { CancelarExportacao(sender, e); e.Handled = true; return; }
+        if (e.KeyboardDevice.Modifiers == ModifierKeys.Control && chave == Key.E) { ExportarVideo(sender, e); e.Handled = true; return; }
         if (e.OriginalSource is not TextBox && Keyboard.FocusedElement is not TextBox && e.KeyboardDevice.Modifiers == ModifierKeys.Control)
         {
             if (chave == Key.Z) { Desfazer(sender, e); e.Handled = true; return; }
@@ -324,7 +335,15 @@ public partial class JanelaPrincipal : Window
             var reverso = e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Shift);
             indice = atual < 0 ? (reverso ? 4 : 0) : (atual + (reverso ? 4 : 1)) % 5;
         }
-        if (indice >= 0) { Destinos[indice].Focus(); Destinos[indice].BringIntoView(); e.Handled = true; }
+        if (indice >= 0)
+        {
+            if (exportacaoEmAndamento && indice != 4)
+            {
+                Anunciar("Exportação em andamento. Ações de edição estão temporariamente indisponíveis. Use Alt+5 para consultar o progresso ou Escape para cancelar.");
+                indice = 4;
+            }
+            Destinos[indice].Focus(); Destinos[indice].BringIntoView(); e.Handled = true;
+        }
     }
     private Window CriarDialogo(string titulo, UIElement conteudo) => new()
     {
@@ -337,15 +356,27 @@ public partial class JanelaPrincipal : Window
         var botao = new Button { Content = rotulo, IsCancel = true };
         botao.Click += (_, _) => dialogo.Close(); painel.Children.Add(botao);
     }
+    internal void RestaurarFocoAposDialogo(IInputElement? focoAnterior, UIElement? reserva = null)
+    {
+        if (focoAnterior is UIElement { IsVisible: true, IsEnabled: true } elemento && elemento.Focus())
+        {
+            if (IsActive) Keyboard.Focus(elemento);
+            return;
+        }
+        var destino = reserva is { IsVisible: true, IsEnabled: true } ? reserva
+            : (Editor.Visibility == Visibility.Visible ? (BotaoAbrirVideoExportado.IsVisible ? BotaoAbrirVideoExportado : Destinos[4]) : BotaoNovo);
+        destino.Focus();
+        if (IsActive) Keyboard.Focus(destino);
+    }
     private void Informacoes(string titulo, string texto)
     {
-        var foco = Keyboard.FocusedElement;
+        var foco = FocusManager.GetFocusedElement(this) ?? Keyboard.FocusedElement;
         var painel = new StackPanel();
         var corpo = new TextBox { Text = texto, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 0, 16) };
         AutomationProperties.SetName(corpo, titulo); painel.Children.Add(corpo);
         var dialogo = CriarDialogo(titulo, painel); AdicionarFechar(dialogo, painel);
         dialogo.Loaded += (_, _) => corpo.Focus(); dialogo.ShowDialog();
-        if (foco is IInputElement elemento) Keyboard.Focus(elemento);
+        RestaurarFocoAposDialogo(foco);
     }
     private void AdicionarMidia(object sender, RoutedEventArgs e)
     {
@@ -397,9 +428,9 @@ public partial class JanelaPrincipal : Window
     private void Sobre(object sender, RoutedEventArgs e)
     {
         var versao = typeof(App).Assembly.GetName().Version!;
-        Informacoes("Sobre o sonarFrame", $"sonarFrame {versao.Major}.{versao.Minor}.{versao.Build}\nMontagem não destrutiva e prévia da biblioteca.\nReprodução da composição com camadas de áudio, vídeo e imagens disponível. A exportação fica para outra etapa.");
+        Informacoes("Sobre o sonarFrame", $"sonarFrame {versao.Major}.{versao.Minor}.{versao.Build}\nMontagem não destrutiva e prévia da biblioteca.\nReprodução da composição com camadas de áudio, vídeo e imagens e exportação em MP4 disponíveis.");
     }
-    private void InformacoesExportacao(object sender, RoutedEventArgs e) => Anunciar("A exportação de vídeo ainda não está disponível. Você já pode salvar o projeto.");
+
     private void Ajuda(object sender, RoutedEventArgs e) => Informacoes("Atalhos de teclado", """
         Tab / Shift+Tab: percorrer controles e ações de cada área antes de passar à próxima.
         Cima / Baixo na biblioteca: selecionar arquivos sem sair da lista. Enter: abrir prévia. Delete: remover da biblioteca.
@@ -408,7 +439,7 @@ public partial class JanelaPrincipal : Window
         Alt+3: timeline. Alt+4: prévia.
         Alt+5: comandos do projeto.
         F6 / Shift+F6: alternar entre as cinco regiões.
-        Ctrl+S: salvar. Escape: fechar diálogos e menus.
+        Ctrl+S: salvar. Ctrl+E: exportar vídeo em MP4. Escape: fechar diálogos e menus.
         Ctrl+Z / Ctrl+Y: desfazer / refazer edição.
         Ctrl+B: dividir no cursor (fora de campos de texto).
 
@@ -442,6 +473,6 @@ public partial class JanelaPrincipal : Window
         Use os botões Reproduzir/Pausar, Parar e Buscar e pausar.
         Espaço nos botões mantém sua ativação nativa.
         Imagens isoladas não oferecem controles temporais.
-        Reproduzir e Pausar usam o mesmo botão na área do vídeo. Na timeline: Parar, Reproduzir intervalo e Cancelar preparação ou busca. Espaço na lista da composição alterna reprodução. Shift+F10, Aplicações ou botão direito abre consulta, divisão, exclusão, remoção, reordenação e histórico. Escape retorna à timeline. Camadas de áudio, vídeo e imagens são reproduzidas na composição. A exportação ainda não está disponível.
+        Reproduzir e Pausar usam o mesmo botão na área do vídeo. Na timeline: Parar, Reproduzir intervalo e Cancelar preparação ou busca. Espaço na lista da composição alterna reprodução. Shift+F10, Aplicações ou botão direito abre consulta, divisão, exclusão, remoção, reordenação e histórico. Escape retorna à timeline. Camadas de áudio, vídeo e imagens são reproduzidas na composição. Use Exportar vídeo (Ctrl+E ou Alt+5) para gerar o arquivo MP4 em 720p ou 1080p, escolhendo orientação 16:9 ou 9:16 e enquadramento.
         """);
 }

@@ -32,6 +32,13 @@ public partial class JanelaPrincipal
 
     private void MenuTimelineFechado(object sender, RoutedEventArgs e) => FocarConteudoSelecionado();
 
+    private void TeclaMenuTimeline(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        MenuTimeline.IsOpen = false;
+        e.Handled = true;
+    }
+
     private void SelecionarAlvoMenuTimeline(object sender, MouseButtonEventArgs e)
     {
         contextoTemporalTimeline = false;
@@ -149,15 +156,19 @@ public partial class JanelaPrincipal
             }
             var ordem = new[] { 0, 3, 1, 2, 4 };
             var indiceArea = Array.IndexOf(ordem, Array.IndexOf(Regioes, area));
-            var destinoArea = indiceArea + (reverso ? -1 : 1);
-            if (destinoArea >= 0 && destinoArea < ordem.Length)
+            for (var destinoArea = indiceArea + (reverso ? -1 : 1); destinoArea >= 0 && destinoArea < ordem.Length; destinoArea += reverso ? -1 : 1)
             {
+                var controlesDestino = ControlesDaArea(Regioes[ordem[destinoArea]]).ToArray();
+                if (controlesDestino.Length == 0) continue;
                 var entradaArea = reverso
-                    ? ControlesDaArea(Regioes[ordem[destinoArea]]).Last() : Destinos[ordem[destinoArea]];
+                    ? controlesDestino[^1]
+                    : (Destinos[ordem[destinoArea]] is { IsEnabled: true, IsVisible: true } destinoPadrao ? destinoPadrao : controlesDestino[0]);
                 entradaArea.Focus();
                 entradaArea.BringIntoView();
                 e.Handled = true;
+                return;
             }
+            if (exportacaoEmAndamento && reverso) e.Handled = true;
             return;
         }
         if (area == RegiaoLinhaDoTempo && origem is not TextBox && e.Key is Key.Home or Key.End or Key.PageUp or Key.PageDown)

@@ -2,7 +2,7 @@
  Title="sonarFrame" FontSize="16" Width="1180" Height="830" MinWidth="760" MinHeight="580" WindowStartupLocation="CenterScreen" PreviewKeyDown="TeclaJanela" Closing="FechandoJanela">
  <DockPanel x:Name="Estrutura">
   <local:MenuComAberturaExplicita x:Name="MenuPrincipal" DockPanel.Dock="Top" Visibility="{Binding Visibility, ElementName=Editor}" AutomationProperties.HelpText="Enter ou Espaço abre e recolhe o menu. Esquerda e Direita trocam de menu sem abrir. Escape fecha.">
-   <MenuItem Header="_Projeto"><MenuItem Header="_Novo projeto" Click="NovoProjeto"/><MenuItem Header="_Abrir projeto…" Click="AbrirProjeto"/><MenuItem Header="_Salvar" InputGestureText="Ctrl+S" Click="SalvarProjeto"/><MenuItem Header="Salvar _como…" Click="SalvarComo"/><Separator/><MenuItem Header="Tela _inicial" Click="IrParaInicio"/><MenuItem Header="Sai_r" Click="Sair"/></MenuItem>
+   <MenuItem Header="_Projeto"><MenuItem Header="_Novo projeto" Click="NovoProjeto"/><MenuItem Header="_Abrir projeto…" Click="AbrirProjeto"/><MenuItem Header="_Salvar" InputGestureText="Ctrl+S" Click="SalvarProjeto"/><MenuItem Header="Salvar _como…" Click="SalvarComo"/><MenuItem x:Name="MenuExportar" Header="_Exportar vídeo…" InputGestureText="Ctrl+E" Click="ExportarVideo"/><Separator/><MenuItem Header="Tela _inicial" Click="IrParaInicio"/><MenuItem Header="Sai_r" Click="Sair"/></MenuItem>
    <MenuItem Header="A_juda"><MenuItem Header="_Atalhos de teclado" InputGestureText="F1" Click="Ajuda"/><MenuItem Header="_Sobre o sonarFrame" Click="Sobre"/></MenuItem>
   </local:MenuComAberturaExplicita>
   <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="Gray" Padding="14,8">
@@ -13,7 +13,7 @@
     <StackPanel x:Name="TelaInicial" MaxWidth="720" HorizontalAlignment="Stretch" VerticalAlignment="Center" PreviewKeyDown="TeclaTelaInicial">
      <TextBlock Text="sonarFrame" FontSize="42" FontWeight="SemiBold" Margin="0,18,0,8"/>
      <TextBlock Text="Seu vídeo, no seu ritmo." FontSize="25" Margin="0,0,0,16"/>
-     <TextBlock Text="Crie um projeto, importe e confira suas mídias e organize a composição pelo teclado. Reproduza a montagem com suas camadas de áudio, vídeo e fotos. Exportação chegará em outra etapa." Margin="0,0,0,24"/>
+     <TextBlock Text="Crie um projeto, importe e confira suas mídias, organize a composição e exporte o vídeo em MP4 pelo teclado. Reproduza a montagem com suas camadas de áudio, vídeo e fotos." Margin="0,0,0,24"/>
      <Button x:Name="BotaoNovo" Content="_Novo projeto" Click="NovoProjeto" HorizontalContentAlignment="Left"/>
      <Button Content="_Meus projetos" Click="MeusProjetos" HorizontalContentAlignment="Left"/>
      <Button Content="_Abrir projeto existente…" Click="AbrirProjeto" HorizontalContentAlignment="Left"/>
@@ -105,10 +105,14 @@
        <TextBlock x:Name="LinhaDoTempoVazia" Text="A composição está vazia. Adicione um item da biblioteca." Margin="0,6"/>
       </StackPanel>
      </GroupBox>
-     <GroupBox x:Name="RegiaoComandos" KeyboardNavigation.TabNavigation="Continue" KeyboardNavigation.DirectionalNavigation="Contained" Header="5 · Comandos do projeto"><WrapPanel>
+     <GroupBox x:Name="RegiaoComandos" KeyboardNavigation.TabNavigation="Continue" KeyboardNavigation.DirectionalNavigation="Contained" Header="5 · Comandos do projeto"><StackPanel><WrapPanel>
        <Button x:Name="BotaoSalvar" Content="Salvar projeto" Click="SalvarProjeto" AutomationProperties.HelpText="Control S"/>
-       <Button Content="Sobre a exportação" Click="InformacoesExportacao"/>
-      </WrapPanel></GroupBox>
+       <Button x:Name="BotaoExportar" Content="_Exportar vídeo…" Click="ExportarVideo" AutomationProperties.HelpText="Control E"/>
+       <Button x:Name="BotaoProgressoExportacao" Content="Consultar progresso da exportação" Click="ConsultarProgressoExportacao" Visibility="Collapsed"/>
+       <Button x:Name="BotaoCancelarExportacao" Content="Cancelar exportação" Click="CancelarExportacao" Visibility="Collapsed"/>
+       <Button x:Name="BotaoAbrirVideoExportado" Content="Abrir vídeo exportado" Click="AbrirVideoExportado" Visibility="Collapsed"/>
+       <Button x:Name="BotaoAbrirPastaExportada" Content="Abrir pasta do vídeo" Click="AbrirPastaExportada" Visibility="Collapsed"/>
+      </WrapPanel><TextBlock x:Name="EstadoExportacao" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.Name="Estado da exportação"/></StackPanel></GroupBox>
      <Expander Header="Mensagens recentes" Margin="6" IsExpanded="False"><ListBox x:Name="Mensagens" Height="100" AutomationProperties.Name="Mensagens recentes"/></Expander>
     </StackPanel>
    </Grid>

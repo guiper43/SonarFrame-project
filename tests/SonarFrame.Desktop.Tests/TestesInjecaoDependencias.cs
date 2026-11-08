@@ -26,6 +26,7 @@ public sealed class TestesInjecaoDependencias
         Assert.IsType<FabricaPreviaVlc>(provedor.GetRequiredService<IFabricaReprodutorMidia>());
         Assert.IsType<PreviaBiblioteca>(provedor.GetRequiredService<PreviaBiblioteca>());
         Assert.IsType<PreparadorComposicaoFfmpeg>(provedor.GetRequiredService<IPreparadorComposicao>());
+        Assert.IsType<ExportadorFfmpeg>(provedor.GetRequiredService<IExportador>());
 
         await host.StopAsync();
     }
@@ -38,6 +39,7 @@ public sealed class TestesInjecaoDependencias
         Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IFabricaReprodutorMidia>());
         Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<PreviaBiblioteca>());
         Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IPreparadorComposicao>());
+        Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<IExportador>());
         Assert.Throws<InvalidOperationException>(() => host.Services.GetRequiredService<JanelaPrincipal>());
     }
 
@@ -82,6 +84,12 @@ public sealed class TestesInjecaoDependencias
         var preparadorB = escopoB.ServiceProvider.GetRequiredService<IPreparadorComposicao>();
         Assert.Same(preparadorA1, preparadorA2);
         Assert.NotSame(preparadorA1, preparadorB);
+
+        var exportadorA1 = escopoA.ServiceProvider.GetRequiredService<IExportador>();
+        var exportadorA2 = escopoA.ServiceProvider.GetRequiredService<IExportador>();
+        var exportadorB = escopoB.ServiceProvider.GetRequiredService<IExportador>();
+        Assert.Same(exportadorA1, exportadorA2);
+        Assert.NotSame(exportadorA1, exportadorB);
     }
 
     [Fact]
@@ -107,6 +115,8 @@ public sealed class TestesInjecaoDependencias
         var previaB = escopoB.ServiceProvider.GetRequiredService<PreviaBiblioteca>();
         _ = escopoA.ServiceProvider.GetRequiredService<IPreparadorComposicao>();
         _ = escopoB.ServiceProvider.GetRequiredService<IPreparadorComposicao>();
+        var exportadorA = escopoA.ServiceProvider.GetRequiredService<IExportador>();
+        var exportadorB = escopoB.ServiceProvider.GetRequiredService<IExportador>();
 
         await escopoA.DisposeAsync();
 
@@ -114,6 +124,9 @@ public sealed class TestesInjecaoDependencias
         Assert.Equal(1, preparadorA.Descartes);
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>
             previaA.AbrirAsync(new Midia(Guid.NewGuid(), "Vídeo", "teste.mp4", TipoMidia.Video, TempoMidia.Segundos(5))));
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            exportadorA.ExportarAsync(Projeto.Criar("Teste"), new OpcoesExportacao("saida.mp4", Orientacao.Horizontal, ModoEnquadramento.Letterbox), new Progress<ProgressoOperacao>()));
 
         Assert.Equal(0, fabricaB.Descartes);
         Assert.Equal(0, preparadorB.Descartes);
@@ -123,6 +136,8 @@ public sealed class TestesInjecaoDependencias
         Assert.Equal(1, preparadorB.Descartes);
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>
             previaB.AbrirAsync(new Midia(Guid.NewGuid(), "Vídeo", "teste.mp4", TipoMidia.Video, TempoMidia.Segundos(5))));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            exportadorB.ExportarAsync(Projeto.Criar("Teste"), new OpcoesExportacao("saida.mp4", Orientacao.Horizontal, ModoEnquadramento.Letterbox), new Progress<ProgressoOperacao>()));
     }
 
     [Fact]

@@ -104,7 +104,7 @@ public partial class JanelaPrincipal
     private void AbrirPreviaSelecionada(object sender, RoutedEventArgs e) => UltimaOperacaoPrevia = AbrirPreviaSelecionadaAsync();
     internal async Task AbrirPreviaSelecionadaAsync()
     {
-        if (sessao is null || emTransicao || previaEncerrada) return;
+        if (sessao is null || Ocupado || previaEncerrada) return;
         if (Biblioteca.SelectedItems.Count != 1 || Biblioteca.SelectedItem is not Linha linha)
         { Anunciar("Selecione uma única mídia da biblioteca para abrir a prévia."); return; }
         var midia = sessao.Atual.Biblioteca.Single(m => m.Id == linha.Id);
@@ -181,7 +181,7 @@ public partial class JanelaPrincipal
     private async Task<bool> PrepararEdicaoAsync()
     {
         var origem = sessao;
-        if (origem is null || emTransicao || previaEncerrada) return false;
+        if (origem is null || Ocupado || previaEncerrada) return false;
         await InterromperComposicaoAsync(true);
         if (previa.Atual.Estado is not (EstadoPrevia.Preparando or EstadoPrevia.Reproduzindo)) return true;
         var foco = Keyboard.FocusedElement;

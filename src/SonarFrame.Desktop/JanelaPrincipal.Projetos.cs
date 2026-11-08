@@ -21,8 +21,11 @@ public partial class JanelaPrincipal
     private bool emTransicao;
     private bool fechamentoAprovado;
     internal Func<Task>? EncerrarServicosAsync { get; set; }
-    private bool Ocupado => salvando || emTransicao;
+    private bool PersistenciaOcupada => salvando || emTransicao;
+    private bool Ocupado => PersistenciaOcupada || exportacaoEmAndamento;
     internal SessaoEdicao? SessaoAtual => sessao;
+    internal ConfiguracoesDesktop ConfiguracoesAtuais => configuracoes;
+    internal RepositorioConfiguracoes RepositorioConfiguracoes => repositorioConfiguracoes;
     internal void PararTarefasEmSegundoPlano() => salvamentoAutomatico.Stop();
 
     private void ConfigurarCicloDeVida()
@@ -30,18 +33,19 @@ public partial class JanelaPrincipal
         try { configuracoes = repositorioConfiguracoes.Carregar(); }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
         { Loaded += (_, _) => Anunciar("Não foi possível ler as configurações. A pasta padrão será usada: " + e.Message); }
-        salvamentoAutomatico.Tick += async (_, _) =>
-        {
-            if (Ocupado || persistencia is null) return;
-            salvando = true;
-            try
-            {
-                if (await persistencia.SalvarAutomaticamenteSeNecessarioAsync()) { Atualizar(); Anunciar("Projeto salvo automaticamente."); }
-            }
-            catch (Exception e) { Anunciar("Falha no salvamento automático: " + e.Message); }
-            finally { salvando = false; }
-        };
+        salvamentoAutomatico.Tick += async (_, _) => await SalvarAutomaticamenteAsync();
         salvamentoAutomatico.Start();
+    }
+    internal async Task SalvarAutomaticamenteAsync()
+    {
+        if (PersistenciaOcupada || persistencia is null) return;
+        salvando = true;
+        try
+        {
+            if (await persistencia.SalvarAutomaticamenteSeNecessarioAsync()) { Atualizar(); Anunciar("Projeto salvo automaticamente."); }
+        }
+        catch (Exception e) { Anunciar("Falha no salvamento automático: " + e.Message); }
+        finally { salvando = false; }
     }
     internal async Task<bool> SalvarAtualAsync()
     {
@@ -54,7 +58,7 @@ public partial class JanelaPrincipal
     }
     private async Task<bool> PodeSairAsync()
     {
-        if (Ocupado) { Anunciar("Aguarde a operação em andamento."); return false; }
+        if (Ocupado) { Anunciar(exportacaoEmAndamento ? "Exportação em andamento. Aguarde a conclusão ou pressione Escape para cancelar." : "Aguarde a operação em andamento."); return false; }
         emTransicao = true; Estrutura.IsEnabled = false;
         try
         {
@@ -138,6 +142,8 @@ public partial class JanelaPrincipal
         if (Ocupado || sessao is null) return;
         var dialogo = new SaveFileDialog { Filter = "Projeto sonarFrame|*.sonarframe", DefaultExt = ".sonarframe", FileName = sessao.Atual.Nome };
         if (dialogo.ShowDialog(this) != true) return;
+        if (Path.GetDirectoryName(dialogo.FileName) is { } pastaSalvar && ConfiguracoesDesktop.MesmaPasta(pastaSalvar, configuracoes.DiretorioExportacoes))
+        { Anunciar("Escolha uma pasta diferente da pasta de vídeos exportados para não misturar arquivos do projeto com exportações."); return; }
         if (string.Equals(caminhoProjeto, dialogo.FileName, StringComparison.OrdinalIgnoreCase)) { await SalvarAtualAsync(); return; }
         salvando = true;
         try
@@ -192,7 +198,19 @@ public partial class JanelaPrincipal
         var salvar = new Button { Content = "Salvar configurações", IsDefault = true };
         salvar.Click += (_, _) =>
         {
-            try { var proximo = new ConfiguracoesDesktop(pasta.Text); Directory.CreateDirectory(proximo.DiretorioProjetos); repositorioConfiguracoes.Salvar(proximo); configuracoes = proximo; dialogo.DialogResult = true; }
+            try
+            {
+                var novaPastaProjetos = pasta.Text;
+                var novaPastaExportacoes = ConfiguracoesDesktop.MesmaPasta(novaPastaProjetos, configuracoes.DiretorioExportacoes)
+                    ? ConfiguracoesDesktop.PastaExportacoesPadrao(novaPastaProjetos, PastaDownloadsExportacao)
+                    : configuracoes.DiretorioExportacoes;
+                var proximo = new ConfiguracoesDesktop(novaPastaProjetos, novaPastaExportacoes);
+                proximo.Validar();
+                Directory.CreateDirectory(proximo.DiretorioProjetos);
+                repositorioConfiguracoes.Salvar(proximo);
+                configuracoes = proximo;
+                dialogo.DialogResult = true;
+            }
             catch (Exception ex) { MessageBox.Show(dialogo, ex.Message, "Não foi possível salvar"); }
         };
         painel.Children.Add(salvar); AdicionarFechar(dialogo, painel, "Cancelar");
