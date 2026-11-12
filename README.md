@@ -4,7 +4,9 @@
 
 O **sonarFrame** é um projeto de editor de vídeo para Windows, pensado inicialmente para pessoas cegas e usuárias de leitores de tela. Seu objetivo é tornar tarefas comuns de edição audiovisual — importar, organizar, cortar, legendar, combinar áudios e exportar — possíveis de realizar com autonomia, sem depender do mouse ou de uma linha do tempo exclusivamente visual.
 
-> **Versão 0.1.0:** montagem não destrutiva com interface WPF, importação real, divisão e remoção de trechos, camadas, volume, histórico, projetos SQLite, salvamento automático e recuperação. Consulte [o escopo da versão](docs/release.md), [o guia da interface](docs/desktop.md) e [o guia do núcleo](docs/core.md). Reprodução, legendas e renderização ainda não estão implementadas. As funcionalidades planejadas abaixo descrevem o produto completo, não apenas esta versão.
+> **Versão 0.1.0:** montagem não destrutiva com interface WPF, importação real, divisão e remoção de trechos, camadas, volume, histórico, projetos SQLite, salvamento automático e recuperação. Consulte [o escopo da versão](docs/release.md), [o guia da interface](docs/desktop.md) e [o guia do núcleo](docs/core.md). Essa versão não inclui reprodução, legendas ou renderização. As funcionalidades planejadas abaixo descrevem o produto completo.
+
+> **Reprodução implementada:** prévia da biblioteca e composição com camadas de áudio, vídeo e imagens, preparação cancelável, navegação pelos timestamps da origem CFR/VFR e imagem pausada composta diretamente dos arquivos. Exportação fica para outra feature. Consulte [o andamento e os critérios de validação](docs/plano-reproducao.md).
 
 ## Princípios do produto
 
@@ -119,7 +121,7 @@ A importação de SRT, a edição convencional e a exportação **não depender�
 | Processamento audiovisual | FFmpeg |
 | Persistência dos projetos | SQLite |
 | Acessibilidade | UI Automation, controles WPF e `AutomationPeer` em controles personalizados |
-| Reprodução e prévia | **Em avaliação:** LibVLCSharp ou FFME |
+| Reprodução e prévia | LibVLCSharp/WPF e FFmpeg para prévia da biblioteca e composição com camadas |
 | Instalador | **Em avaliação:** MSIX ou Inno Setup |
 
 A definição da biblioteca de prévia, do empacotamento e de detalhes da integração com FFmpeg dependerá de provas de conceito, priorizando testes reais com NVDA.

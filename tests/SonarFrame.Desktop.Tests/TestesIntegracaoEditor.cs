@@ -2,6 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SonarFrame.Application;
 using SonarFrame.Core;
 using SonarFrame.Desktop;
@@ -16,18 +18,18 @@ public sealed class TestesIntegracaoEditor
     {
         janela.ExibirProjeto(Amostra(), caminho: caminho);
         var sessao = janela.SessaoAtual!;
-        Assert.False(janela.BotaoExcluirSelecao.IsEnabled);
+        Assert.False(janela.MenuExcluirSelecao.IsEnabled);
         sessao.Posicionar(TempoMidia.Segundos(4)); janela.Atualizar();
-        janela.BotaoDividir.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        janela.MenuDividir.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(2, sessao.Atual.LinhaDoTempo.Length); Assert.Equal(2, janela.LinhaDoTempo.Items.Count);
         sessao.Posicionar(TempoMidia.Segundos(2)); sessao.Posicionar(TempoMidia.Segundos(6), true); janela.Atualizar();
-        Assert.True(janela.BotaoExcluirSelecao.IsEnabled);
-        janela.BotaoExcluirSelecao.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao); Assert.False(janela.BotaoExcluirSelecao.IsEnabled);
-        janela.BotaoDesfazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(janela.MenuExcluirSelecao.IsEnabled);
+        janela.MenuExcluirSelecao.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
+        Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao); Assert.False(janela.MenuExcluirSelecao.IsEnabled);
+        janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(TempoMidia.Segundos(10), sessao.Atual.Duracao);
-        Assert.True(janela.BotaoRefazer.IsEnabled);
-        janela.BotaoRefazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(janela.MenuRefazer.IsEnabled);
+        janela.MenuRefazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Equal(TempoMidia.Segundos(6), sessao.Atual.Duracao);
         Assert.True(await janela.SalvarAtualAsync()); Assert.False(sessao.TemAlteracoes);
         var salvo = await new RepositorioProjetosSqlite().CarregarAsync(caminho);
@@ -47,7 +49,7 @@ public sealed class TestesIntegracaoEditor
         janela.BotaoRemoverCamada.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.Single(janela.SessaoAtual!.Atual.LinhaDoTempo); Assert.Empty(janela.SessaoAtual.Atual.Camadas);
         Assert.False(janela.BotaoEditarCamada.IsEnabled);
-        janela.BotaoDesfazer.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        janela.MenuDesfazer.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
         Assert.Single(janela.SessaoAtual.Atual.Camadas); Assert.True(janela.BotaoEditarCamada.IsEnabled);
         Assert.True(await janela.SalvarAtualAsync());
         var salvo = await new RepositorioProjetosSqlite().CarregarAsync(caminho);
@@ -73,7 +75,7 @@ public sealed class TestesIntegracaoEditor
         Assert.Contains("original.mp4", janela.Propriedades.Text);
         return Task.CompletedTask;
     });
-    private static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo)
+    internal static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo, IFabricaReprodutorMidia? fabrica = null, int prazoSegundos = 30, IPreparadorComposicao? preparador = null)
     {
         var conclusao = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -82,26 +84,44 @@ public sealed class TestesIntegracaoEditor
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
             _ = dispatcher.InvokeAsync(async () =>
             {
+                IHost? host = null;
+                AsyncServiceScope? escopo = null;
                 JanelaPrincipal? janela = null;
+                Exception? falha = null;
                 var pasta = Path.Combine(AppContext.BaseDirectory, "desktop-tests", Guid.NewGuid().ToString("N"));
                 try
                 {
                     Directory.CreateDirectory(pasta);
-                    janela = new JanelaPrincipal();
+                    host = RegistroDependencias.CriarHostSonarFrame(configurarServicos: servicos =>
+                    {
+                        if (fabrica is not null) servicos.AddScoped(_ => fabrica);
+                        if (preparador is not null) servicos.AddScoped(_ => preparador);
+                    });
+                    escopo = host.Services.CreateAsyncScope();
+                    janela = escopo.Value.ServiceProvider.GetRequiredService<JanelaPrincipal>();
                     await corpo(janela, Path.Combine(pasta, "test.sonarframe"));
-                    conclusao.TrySetResult();
                 }
-                catch (Exception e) { conclusao.TrySetException(e); }
+                catch (Exception e) { falha = e; }
                 finally
                 {
-                    janela?.PararTarefasEmSegundoPlano();
-                    if (Directory.Exists(pasta)) Directory.Delete(pasta, true);
+                    try
+                    {
+                        janela?.PararTarefasEmSegundoPlano();
+                        if (janela is not null) await janela.EncerrarPreviaAsync();
+                        if (janela?.IsLoaded == true) janela.Hide();
+                        if (escopo is { } escopoAtivo) await escopoAtivo.DisposeAsync();
+                        if (host is IAsyncDisposable hostAssincrono) await hostAssincrono.DisposeAsync();
+                        else host?.Dispose();
+                        if (Directory.Exists(pasta)) Directory.Delete(pasta, true);
+                    }
+                    catch (Exception e) { falha ??= e; }
+                    if (falha is null) conclusao.TrySetResult(); else conclusao.TrySetException(falha);
                     dispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
                 }
             });
             Dispatcher.Run();
         });
         thread.SetApartmentState(ApartmentState.STA); thread.IsBackground = true; thread.Start();
-        return conclusao.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        return conclusao.Task.WaitAsync(TimeSpan.FromSeconds(prazoSegundos));
     }
 }

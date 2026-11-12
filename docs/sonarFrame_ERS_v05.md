@@ -272,6 +272,8 @@ O sonarFrame deverá oferecer importação de mídias, prévia, organização de
 ### 5.2 Linha do tempo e lista estruturada
 
 - **RNF01.06 — Duas modalidades complementares.** O editor deverá permitir navegar pela **posição temporal** conforme RF05 e por uma **lista estruturada dos conteúdos** da composição.
+
+  Decisão de interação de 02/11/2026: as duas modalidades compartilham o foco na timeline. Cima/Baixo navega entre itens; Esquerda/Direita com Ctrl e Shift navega e seleciona no tempo. Delete após seleção temporal exclui o intervalo; após navegação entre itens abre a ação de remover da composição, sem execução imediata. Alt+3 entra nessa lista. As ações avançadas ficam no menu contextual de RNF01.11, com os atalhos diretos preservados.
 - **RNF01.07 — Informações por item.** A lista estruturada deverá apresentar nome, tipo, ordem e duração dos elementos quando disponíveis, anunciáveis pelo NVDA.
 - **RNF01.08 — Seleção sem reprodução implícita.** Selecionar um item na lista não deverá iniciar automaticamente sua reprodução nem aplicar operações de edição.
 - **RNF01.09 — Reordenação acessível.** O usuário deverá poder mover um conteúdo para antes, depois, início ou fim da sequência sem arrastar com o mouse; após o movimento, o NVDA deverá informar sua posição na lista.

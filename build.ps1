@@ -18,7 +18,7 @@ try {
     & $dotnet test SonarFrame.slnx -c Release --no-build -m:1
     if ($LASTEXITCODE -ne 0) { throw 'Compilação ou testes falharam.' }
     if ($Pack) {
-        & $dotnet pack SonarFrame.slnx -c Release --no-build -o artifacts/packages -m:1
+        & $dotnet pack SonarFrame.slnx -c Release --no-build -o .tools/packages -m:1
         if ($LASTEXITCODE -ne 0) { throw 'Empacotamento falhou.' }
     }
 } finally { Pop-Location }

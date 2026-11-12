@@ -1,15 +1,19 @@
-name: Artefatos de release
+name: Artefatos de homologação e release
 on:
   push:
+    branches: ['homolog']
     tags: ['v*']
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Tag correspondente à versão em Directory.Build.props'
-        required: true
-        default: 'v0.1.0'
+        description: 'Tag correspondente à versão em Directory.Build.props (deixe vazio para pacote de homologação)'
+        required: false
+        default: ''
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   package:
     runs-on: windows-latest
@@ -19,17 +23,27 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet restore SonarFrame.slnx --locked-mode
-      - name: Testar e empacotar a versão correspondente
+      - name: Testar e empacotar distribuição
         shell: pwsh
         env:
-          EXPECTED_TAG: ${{ github.event.inputs.version_tag || github.ref_name }}
-        run: ./release.ps1 -ExpectedTag $env:EXPECTED_TAG
+          INPUT_TAG: ${{ github.event.inputs.version_tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:INPUT_TAG) {
+              ./release.ps1 -ExpectedTag $env:INPUT_TAG
+          } elseif ($env:REF_TYPE -eq 'tag') {
+              ./release.ps1 -ExpectedTag $env:REF_NAME
+          } else {
+              ./release.ps1
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: sonarframe-release
+          name: ${{ (github.ref_type == 'tag' || github.event.inputs.version_tag != '') && 'sonarframe-release' || 'sonarframe-homolog' }}
+          include-hidden-files: true
           path: |
-            artifacts/releases/**/*.zip
-            artifacts/releases/**/*.nupkg
-            artifacts/releases/**/SHA256SUMS.txt
-            artifacts/releases/**/CHANGELOG.md
-            artifacts/releases/**/release.md
+            .tools/releases/**/*.zip
+            .tools/releases/**/*.nupkg
+            .tools/releases/**/SHA256SUMS.txt
+            .tools/releases/**/CHANGELOG.md
+            .tools/releases/**/release.md

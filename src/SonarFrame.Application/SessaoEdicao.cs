@@ -49,7 +49,7 @@ public sealed class SessaoEdicao
         lock (bloqueio)
         {
             destino = TempoMidia.Maximo(TempoMidia.Zero, TempoMidia.Minimo(destino, atual.Duracao));
-            var selecao = estenderSelecao ? new SelecaoTemporal(atual.Selecao?.Ancora ?? atual.Cursor, destino) : null;
+            var selecao = reproducao ? atual.Selecao : estenderSelecao ? new SelecaoTemporal(atual.Selecao?.Ancora ?? atual.Cursor, destino) : null;
             atual = atual with { Cursor = destino, Selecao = selecao?.Inicio == selecao?.Fim ? null : selecao };
         }
 

@@ -15,10 +15,12 @@ public partial class JanelaPrincipal
 {
     private PersistenciaProjeto? persistencia;
     private ConfiguracoesDesktop configuracoes = ConfiguracoesDesktop.Padrao;
-    private readonly RepositorioConfiguracoes repositorioConfiguracoes = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sonarFrame", "settings.json"));
+    private readonly RepositorioConfiguracoes repositorioConfiguracoes;
+    private readonly CatalogoProjetos catalogoProjetos;
     private readonly DispatcherTimer salvamentoAutomatico = new() { Interval = TimeSpan.FromSeconds(15) };
     private bool emTransicao;
     private bool fechamentoAprovado;
+    internal Func<Task>? EncerrarServicosAsync { get; set; }
     private bool Ocupado => salvando || emTransicao;
     internal SessaoEdicao? SessaoAtual => sessao;
     internal void PararTarefasEmSegundoPlano() => salvamentoAutomatico.Stop();
@@ -63,6 +65,7 @@ public partial class JanelaPrincipal
                 if (escolha == MessageBoxResult.Yes && !await SalvarAtualAsync()) return false;
             }
             if (persistencia is not null) await persistencia.FecharAsync(descartarAlteracoesNaoSalvas: true);
+            await LimparPreviaAsync();
             return true;
         }
         catch (Exception e) { Anunciar("Não foi possível fechar o projeto: " + e.Message); return false; }
@@ -73,7 +76,23 @@ public partial class JanelaPrincipal
         if (fechamentoAprovado) return;
         e.Cancel = true;
         if (!await PodeSairAsync()) return;
-        salvamentoAutomatico.Stop(); fechamentoAprovado = true;
+        salvamentoAutomatico.Stop();
+        emTransicao = true; Estrutura.IsEnabled = false;
+        Anunciar("Encerrando a prévia e liberando os recursos.");
+        try
+        {
+            try { await EncerrarPreviaAsync(); }
+            finally
+            {
+                if (EncerrarServicosAsync is { } encerrar) await encerrar();
+            }
+        }
+        catch (Exception erro)
+        {
+            MessageBox.Show(this, "Não foi possível liberar todos os recursos ao encerrar: " + erro.Message,
+                "Encerrar sonarFrame", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        fechamentoAprovado = true;
 
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
@@ -123,7 +142,7 @@ public partial class JanelaPrincipal
         salvando = true;
         try
         {
-            var substituto = new PersistenciaProjeto(sessao, repositorio, dialogo.FileName);
+            var substituto = new PersistenciaProjeto(sessao, repositorio, dialogo.FileName, relogio);
             await substituto.SalvarAsync();
             var anterior = persistencia;
             persistencia = substituto; caminhoProjeto = dialogo.FileName;
@@ -133,18 +152,23 @@ public partial class JanelaPrincipal
         catch (Exception ex) { Anunciar("Falha ao salvar como: " + ex.Message); }
         finally { salvando = false; }
     }
+    internal sealed record LinhaProjeto(string Caminho, string Rotulo)
+    {
+        public override string ToString() => Rotulo;
+    }
+
     private async void MeusProjetos(object sender, RoutedEventArgs e)
     {
         if (Ocupado) return;
         ResultadoCatalogo catalogo;
         emTransicao = true; Estrutura.IsEnabled = false;
-        try { catalogo = await new CatalogoProjetos(repositorio).LerAsync(configuracoes.DiretorioProjetos); }
+        try { catalogo = await catalogoProjetos.LerAsync(configuracoes.DiretorioProjetos); }
         catch (Exception ex) { Anunciar("Não foi possível listar projetos: " + ex.Message); return; }
         finally { emTransicao = false; Estrutura.IsEnabled = true; }
         var painel = new StackPanel();
         painel.Children.Add(new TextBlock { Text = catalogo.Projetos.Count == 0 ? "Nenhum projeto nesta pasta. Crie um projeto ou altere a pasta nas Configurações." : "Selecione um projeto para abrir.", TextWrapping = TextWrapping.Wrap });
         var lista = new ListBox { Height = 240, DisplayMemberPath = "Rotulo", Margin = new Thickness(0, 12, 0, 12) };
-        var linhas = catalogo.Projetos.Select(p => new { p.Caminho, Rotulo = $"{p.Nome} — {p.UltimaModificacaoUtc.ToLocalTime():g}{(p.TemRecuperacao ? " — recuperação disponível" : "")}" }).ToArray();
+        var linhas = catalogo.Projetos.Select(p => new LinhaProjeto(p.Caminho, $"Projeto: {p.Nome}. Caminho: {p.Caminho}. Modificado: {p.UltimaModificacaoUtc.ToLocalTime():g}{(p.TemRecuperacao ? ". Recuperação disponível" : "")}")).ToArray();
         lista.ItemsSource = linhas; AutomationProperties.SetName(lista, "Projetos salvos"); painel.Children.Add(lista);
         var dialogo = CriarDialogo("Meus projetos", painel); string? escolhido = null;
         var abrir = new Button { Content = "Abrir projeto", IsDefault = true, IsEnabled = false };

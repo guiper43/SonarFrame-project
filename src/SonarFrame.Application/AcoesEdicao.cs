@@ -17,7 +17,7 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
             posicao += clipe.Duracao;
         }
         resultado.AddRange(projeto.Camadas.Select(l => new ItemComposicao(l.Clipe.Id, l.Clipe.Nome, l.Clipe.MidiaId, l.Inicio, l.Clipe.Duracao, l.Clipe.Volume, true)));
-        return resultado;
+        return resultado.OrderBy(c => c.Inicio).ThenBy(c => c.EhCamada).ToArray();
     }
     public void DividirNoCursor()
     {
