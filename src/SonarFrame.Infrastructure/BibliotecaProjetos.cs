@@ -3,9 +3,49 @@ using SonarFrame.Application;
 
 namespace SonarFrame.Infrastructure;
 
-public sealed record ConfiguracoesDesktop([property: System.Text.Json.Serialization.JsonPropertyName("ProjectsDirectory")] string DiretorioProjetos)
+public sealed record ConfiguracoesDesktop(
+    [property: System.Text.Json.Serialization.JsonPropertyName("ProjectsDirectory")] string DiretorioProjetos,
+    string? DiretorioExportacoes = null)
 {
-    public static ConfiguracoesDesktop Padrao => new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "sonarFrame"));
+    public static string PastaProjetosPadrao => Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "sonarFrame"));
+    public static string PastaDownloadsPadrao => PastasUsuario.Downloads;
+
+    public static string PastaExportacoesPadrao(string pastaProjetos, string? pastaDownloads = null)
+    {
+        var baseDownloads = string.IsNullOrWhiteSpace(pastaDownloads) ? PastaDownloadsPadrao : pastaDownloads;
+        return MesmaPasta(pastaProjetos, baseDownloads)
+            ? Path.Combine(baseDownloads, "sonarFrame-exportacoes") : baseDownloads;
+    }
+
+    [System.Text.Json.Serialization.JsonPropertyName("ExportsDirectory")]
+    public string DiretorioExportacoes { get; init; } = string.IsNullOrWhiteSpace(DiretorioExportacoes) ? PastaExportacoesPadrao(DiretorioProjetos) : DiretorioExportacoes;
+
+    public static ConfiguracoesDesktop Padrao => new(PastaProjetosPadrao);
+
+    public void Validar()
+    {
+        if (string.IsNullOrWhiteSpace(DiretorioProjetos) || !Path.IsPathFullyQualified(DiretorioProjetos))
+            throw new ArgumentException("Escolha uma pasta absoluta para os projetos.");
+        if (string.IsNullOrWhiteSpace(DiretorioExportacoes) || !Path.IsPathFullyQualified(DiretorioExportacoes))
+            throw new ArgumentException("Escolha uma pasta absoluta para os vídeos exportados.");
+        if (MesmaPasta(DiretorioProjetos, DiretorioExportacoes))
+            throw new ArgumentException("A pasta de vídeos exportados deve ser diferente da pasta de projetos para não misturar os arquivos.");
+    }
+
+    public static bool MesmaPasta(string? primeira, string? segunda)
+    {
+        if (string.IsNullOrWhiteSpace(primeira) || string.IsNullOrWhiteSpace(segunda)) return false;
+        try
+        {
+            var caminhoA = Path.TrimEndingDirectorySeparator(Path.GetFullPath(primeira));
+            var caminhoB = Path.TrimEndingDirectorySeparator(Path.GetFullPath(segunda));
+            return string.Equals(caminhoA, caminhoB, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
 }
 public sealed class RepositorioConfiguracoes(string caminho)
 {
@@ -15,12 +55,16 @@ public sealed class RepositorioConfiguracoes(string caminho)
         var configuracoes = JsonSerializer.Deserialize<ConfiguracoesDesktop>(File.ReadAllText(caminho)) ?? throw new InvalidDataException("Configurações inválidas.");
         if (string.IsNullOrWhiteSpace(configuracoes.DiretorioProjetos) || !Path.IsPathFullyQualified(configuracoes.DiretorioProjetos))
             throw new InvalidDataException("Pasta de projetos inválida.");
+        if (string.IsNullOrWhiteSpace(configuracoes.DiretorioExportacoes) || !Path.IsPathFullyQualified(configuracoes.DiretorioExportacoes))
+            throw new InvalidDataException("Pasta de exportação inválida.");
+        if (ConfiguracoesDesktop.MesmaPasta(configuracoes.DiretorioProjetos, configuracoes.DiretorioExportacoes))
+            throw new InvalidDataException("A pasta de exportação não pode ser igual à pasta de projetos.");
         return configuracoes;
     }
     public void Salvar(ConfiguracoesDesktop configuracoes)
     {
-        if (string.IsNullOrWhiteSpace(configuracoes.DiretorioProjetos) || !Path.IsPathFullyQualified(configuracoes.DiretorioProjetos))
-            throw new ArgumentException("Escolha uma pasta absoluta para os projetos.");
+        ArgumentNullException.ThrowIfNull(configuracoes);
+        configuracoes.Validar();
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(caminho))!);
         var temporario = caminho + ".tmp";
         File.WriteAllText(temporario, JsonSerializer.Serialize(configuracoes));

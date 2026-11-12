@@ -75,7 +75,7 @@ public sealed class TestesIntegracaoEditor
         Assert.Contains("original.mp4", janela.Propriedades.Text);
         return Task.CompletedTask;
     });
-    internal static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo, IFabricaReprodutorMidia? fabrica = null, int prazoSegundos = 30, IPreparadorComposicao? preparador = null)
+    internal static Task ComJanela(Func<JanelaPrincipal, string, Task> corpo, IFabricaReprodutorMidia? fabrica = null, int prazoSegundos = 30, IPreparadorComposicao? preparador = null, IExportador? exportador = null, TimeProvider? relogio = null)
     {
         var conclusao = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -89,16 +89,22 @@ public sealed class TestesIntegracaoEditor
                 JanelaPrincipal? janela = null;
                 Exception? falha = null;
                 var pasta = Path.Combine(AppContext.BaseDirectory, "desktop-tests", Guid.NewGuid().ToString("N"));
+                var pastaDownloads = Path.Combine(pasta, "downloads");
                 try
                 {
                     Directory.CreateDirectory(pasta);
+                    Directory.CreateDirectory(pastaDownloads);
                     host = RegistroDependencias.CriarHostSonarFrame(configurarServicos: servicos =>
                     {
+                        servicos.AddSingleton(_ => new RepositorioConfiguracoes(Path.Combine(pasta, "config", "settings.json")));
                         if (fabrica is not null) servicos.AddScoped(_ => fabrica);
                         if (preparador is not null) servicos.AddScoped(_ => preparador);
+                        if (exportador is not null) servicos.AddScoped(_ => exportador);
+                        if (relogio is not null) servicos.AddSingleton(relogio);
                     });
                     escopo = host.Services.CreateAsyncScope();
                     janela = escopo.Value.ServiceProvider.GetRequiredService<JanelaPrincipal>();
+                    janela.PastaDownloadsExportacao = pastaDownloads;
                     await corpo(janela, Path.Combine(pasta, "test.sonarframe"));
                 }
                 catch (Exception e) { falha = e; }

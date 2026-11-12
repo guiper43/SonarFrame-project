@@ -6,7 +6,9 @@ O **sonarFrame** é um projeto de editor de vídeo para Windows, pensado inicial
 
 > **Versão 0.1.0:** montagem não destrutiva com interface WPF, importação real, divisão e remoção de trechos, camadas, volume, histórico, projetos SQLite, salvamento automático e recuperação. Consulte [o escopo da versão](docs/release.md), [o guia da interface](docs/desktop.md) e [o guia do núcleo](docs/core.md). Essa versão não inclui reprodução, legendas ou renderização. As funcionalidades planejadas abaixo descrevem o produto completo.
 
-> **Reprodução implementada:** prévia da biblioteca e composição com camadas de áudio, vídeo e imagens, preparação cancelável, navegação pelos timestamps da origem CFR/VFR e imagem pausada composta diretamente dos arquivos. Exportação fica para outra feature. Consulte [o andamento e os critérios de validação](docs/plano-reproducao.md).
+> **Reprodução implementada:** prévia da biblioteca e composição com camadas de áudio, vídeo e imagens, preparação cancelável, navegação pelos timestamps da origem CFR/VFR e imagem pausada composta diretamente dos arquivos. Consulte [o andamento e os critérios de validação](docs/plano-reproducao.md).
+
+> **Exportação na branch `feature/exportacao`:** MP4 em 720p/1080p, orientação obrigatória horizontal/vertical, enquadramento, escolha de destino (Downloads por padrão ou pasta personalizada persistida, sem misturar com projetos), progresso e cancelamento. Salvamento automático e Ctrl+S continuam disponíveis durante o processamento. Consulte [o plano e a cobertura de validação](docs/plano-exportacao.md).
 
 ## Princípios do produto
 
@@ -124,9 +126,11 @@ A importação de SRT, a edição convencional e a exportação **não depender�
 | Reprodução e prévia | LibVLCSharp/WPF e FFmpeg para prévia da biblioteca e composição com camadas |
 | Instalador | **Em avaliação:** MSIX ou Inno Setup |
 
-A definição da biblioteca de prévia, do empacotamento e de detalhes da integração com FFmpeg dependerá de provas de conceito, priorizando testes reais com NVDA.
+A branch de desenvolvimento utiliza LibVLCSharp/WPF para reprodução e FFmpeg por processos externos para composição. O instalador continua em avaliação; o aceite completo com NVDA e em máquina limpa permanece separado dos testes automatizados.
 
 ## Estado e próximos passos
+
+O checklist abaixo registra etapas gerais do produto. Para distinguir o que já existe na branch de desenvolvimento, as lacunas da ERS e a ordem proposta das próximas features, consulte [a revisão de documentação e roadmap de 07/11/2026](docs/auditoria-documentacao-e-proximas-features.md). Reprodução com camadas, entrada progressiva e injeção de dependências já estão implementadas nessa branch; isso não comprova disponibilidade em uma release estável.
 
 - [x] Refinamento funcional de importação, edição, áudio, elementos visuais, navegação e exportação (**RF01–RF06**).
 - [x] Definição do gerenciamento de projetos com SQLite, salvamento e recuperação.

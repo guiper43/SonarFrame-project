@@ -32,6 +32,13 @@ public static class RegistroDependencias
                 File.Exists(executavel) ? executavel : "ffmpeg",
                 provedor.GetRequiredService<IExecutorFfprobe>());
         });
+        services.AddScoped<IExportador>(provedor =>
+        {
+            var executavel = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
+            return new ExportadorFfmpeg(
+                File.Exists(executavel) ? executavel : "ffmpeg",
+                provedor.GetRequiredService<IExecutorFfprobe>());
+        });
         services.AddTransient<JanelaPrincipal>();
         return services;
     }
