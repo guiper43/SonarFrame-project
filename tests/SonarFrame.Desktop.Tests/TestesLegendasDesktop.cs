@@ -65,6 +65,12 @@ public sealed class TestesLegendasDesktop
 
                 await importacao.ImportarLegendaSrtAsync(janela.SessaoAtual!, srt1);
                 Assert.Equal(2, janela.SessaoAtual.Atual.Legendas.Length);
+
+                var srtInvalido = Path.Combine(pasta, "invalido.srt");
+                await File.WriteAllTextAsync(srtInvalido, "1\ninvalido\nTexto", Encoding.UTF8);
+                await importacao.ImportarLegendaSrtAsync(janela.SessaoAtual!, srtInvalido);
+                Assert.Equal(2, janela.SessaoAtual.Atual.Legendas.Length);
+                Assert.Contains(janela.SessaoAtual.Mensagens, m => m.Codigo == "importacao.falhou" && m.Mensagem.Contains("invalido.srt"));
             }
             finally { importacao.Close(); }
 

@@ -179,6 +179,7 @@ public sealed class DialogoImportacao : Window
         {
             var nomeArquivo = System.IO.Path.GetFileName(caminho);
             resultados.Items.Add($"{nomeArquivo}: {ex.Message}");
+            sessao.Notificar(new("importacao.falhou", $"{caminho}: {ex.Message}", true));
             Informar($"Não foi possível importar a legenda SRT: {ex.Message}");
         }
         finally
