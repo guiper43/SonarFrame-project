@@ -8,18 +8,27 @@ public partial class App : System.Windows.Application
 {
     private IHost? host;
     private AsyncServiceScope? escopoJanela;
+    private Mutex? mutexInstalacao;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         try
         {
+            mutexInstalacao = new Mutex(false, "sonarFrame.Desktop.Active");
             host = RegistroDependencias.CriarHostSonarFrame(e.Args);
             await host.StartAsync();
             escopoJanela = host.Services.CreateAsyncScope();
             var janela = escopoJanela.Value.ServiceProvider.GetRequiredService<JanelaPrincipal>();
             janela.EncerrarServicosAsync = EncerrarHostAsync;
             MainWindow = janela;
+            EventHandler? abrirProjetoInicial = null;
+            abrirProjetoInicial = async (_, _) =>
+            {
+                janela.ContentRendered -= abrirProjetoInicial;
+                await janela.AbrirArgumentosAsync(e.Args);
+            };
+            janela.ContentRendered += abrirProjetoInicial;
             janela.Show();
         }
         catch (Exception erro)
@@ -38,6 +47,7 @@ public partial class App : System.Windows.Application
         }
         finally
         {
+            mutexInstalacao?.Dispose();
             base.OnExit(e);
         }
     }
