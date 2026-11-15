@@ -130,14 +130,18 @@ public partial class JanelaPrincipal : Window
         MenuExcluirSelecao.IsEnabled = p.Selecao is { } selecionado && selecionado.Fim > selecionado.Inicio;
         MenuDividir.IsEnabled = p.LinhaDoTempo.Length > 0;
         var conteudoSelecionado = new AcoesEdicao(sessao).Conteudos().SingleOrDefault(c => c.Id == p.ItemSelecionadoId);
+        var legendaAtiva = new AcoesEdicao(sessao).LegendaAtiva();
+        var pausadoComLegenda = previa.Atual.Estado != EstadoPrevia.Reproduzindo && legendaAtiva is not null;
         BotaoVolume.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && p.Biblioteca.Single(a => a.Id == conteudoSelecionado.MidiaId).Tipo != TipoMidia.Imagem;
         BotaoFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null;
         BotaoRemoverFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.TemFades == true;
+        BotaoEditarLegenda.IsEnabled = !exibirPropriedadesBiblioteca && pausadoComLegenda;
         BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.EhCamada == true;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && p.Duracao > TempoMidia.Zero;
         BotaoRemoverMidia.IsEnabled = Biblioteca.SelectedItems.Count > 0;
         MenuConfigurarFades.IsEnabled = conteudoSelecionado is not null;
         MenuRemoverFades.IsEnabled = conteudoSelecionado?.TemFades == true;
+        MenuEditarLegenda.IsEnabled = pausadoComLegenda;
         MenuRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
         MenuMoverAntes.IsEnabled = MenuMoverDepois.IsEnabled = MenuMoverInicio.IsEnabled = MenuMoverFim.IsEnabled = conteudoSelecionado?.EhCamada == false;
         AtualizarControlesPrevia();
@@ -145,6 +149,8 @@ public partial class JanelaPrincipal : Window
         atualizando = false;
         if (exibirPropriedadesBiblioteca && Biblioteca.SelectedItem is Linha linhaBiblioteca) DescreverMidia(linhaBiblioteca.Id);
         else if (conteudoSelecionado is not null) DescreverConteudo(conteudoSelecionado);
+        else if (!exibirPropriedadesBiblioteca && legendaAtiva is not null)
+            Propriedades.Text = $"Selecione um conteúdo na biblioteca ou na linha do tempo.\nLegenda ativa ({legendaAtiva.Inicio} até {legendaAtiva.Fim}): {legendaAtiva.Texto.Replace('\n', ' ')}";
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
     }
     private static string Tipo(TipoMidia tipo) => tipo switch { TipoMidia.Video => "Vídeo", TipoMidia.Audio => "Áudio", _ => "Imagem" };
@@ -227,7 +233,7 @@ public partial class JanelaPrincipal : Window
         exibirPropriedadesBiblioteca = true;
         BotaoInserir.IsEnabled = Biblioteca.SelectedItems.Count > 0;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && sessao.Atual.Duracao > TempoMidia.Zero;
-        BotaoVolume.IsEnabled = BotaoFades.IsEnabled = BotaoRemoverFades.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
+        BotaoVolume.IsEnabled = BotaoFades.IsEnabled = BotaoRemoverFades.IsEnabled = BotaoEditarLegenda.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
         if (Biblioteca.SelectedItem is Linha linha)
             DescreverMidia(linha.Id);
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
@@ -382,11 +388,25 @@ public partial class JanelaPrincipal : Window
         dialogo.Loaded += (_, _) => corpo.Focus(); dialogo.ShowDialog();
         RestaurarFocoAposDialogo(foco);
     }
-    private void AdicionarMidia(object sender, RoutedEventArgs e)
+    private async void AdicionarMidia(object sender, RoutedEventArgs e)
     {
         if (sessao is null) return;
         var dialogo = new DialogoImportacao(this, sessao, leitorMetadados);
-        dialogo.ShowDialog(); Atualizar();
+        dialogo.ShowDialog();
+        if (dialogo.ImportouLegendas)
+        {
+            var tinhaComposicao = composicaoAtiva && !sessao.Atual.LinhaDoTempo.IsEmpty;
+            await InterromperComposicaoAsync(true);
+            if (tinhaComposicao && !sessao.Atual.LinhaDoTempo.IsEmpty)
+            {
+                composicaoAtiva = true;
+                destinoManualComposicao = sessao.Atual.Cursor;
+                UltimoQuadro = ExibirQuadroAsync(sessao.Atual.Cursor);
+                await UltimoQuadro;
+                AtualizarPosicaoPrevia();
+            }
+        }
+        Atualizar();
         if (Biblioteca.Items.Count > 0)
         {
             if (Biblioteca.SelectedIndex < 0) Biblioteca.SelectedIndex = Biblioteca.Items.Count - 1;
@@ -397,7 +417,9 @@ public partial class JanelaPrincipal : Window
         else BotaoAdicionar.Focus();
         foreach (var mensagem in sessao.Mensagens.Where(m => m.Codigo == "importacao.falhou"))
             if (!mensagensRecentes.Contains(mensagem.Mensagem)) mensagensRecentes.Insert(0, mensagem.Mensagem);
-        if (dialogo.ImportouAlgumaMidia) Anunciar("Mídias adicionadas à biblioteca. Cima/Baixo seleciona arquivos, Enter abre a prévia, Tab acessa as ações e Delete remove da biblioteca.");
+        if (dialogo.ImportouAlgumaMidia && dialogo.ImportouLegendas) Anunciar("Mídias adicionadas à biblioteca e legendas SRT aplicadas na linha do tempo.");
+        else if (dialogo.ImportouLegendas) Anunciar($"Legendas SRT importadas ({sessao.Atual.Legendas.Length} legenda(s) na linha do tempo). Pause sobre uma legenda ativa e pressione Shift+F10 para editar.");
+        else if (dialogo.ImportouAlgumaMidia) Anunciar("Mídias adicionadas à biblioteca. Cima/Baixo seleciona arquivos, Enter abre a prévia, Tab acessa as ações e Delete remove da biblioteca.");
         else Anunciar("Diálogo de importação fechado.");
     }
     private TempoMidia? SolicitarDuracaoImagem()

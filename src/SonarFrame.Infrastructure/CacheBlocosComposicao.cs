@@ -198,7 +198,13 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
         var camadas = projeto.Camadas.Where(c => c.Inicio < fim && c.Inicio + c.Clipe.Duracao > inicio)
             .Select(c => new CamadaTemporal(Recortar(c.Clipe, c.Inicio), TempoMidia.Maximo(c.Inicio - inicio, TempoMidia.Zero))).ToImmutableArray();
-        return new(projeto with { LinhaDoTempo = clipes.ToImmutable(), Camadas = camadas, Cursor = TempoMidia.Zero, Selecao = null, ItemSelecionadoId = null }, cortes);
+        var legendas = projeto.Legendas.Where(l => l.Inicio < fim && l.Fim > inicio)
+            .Select(l => l with
+            {
+                Inicio = TempoMidia.Maximo(l.Inicio - inicio, TempoMidia.Zero),
+                Fim = TempoMidia.Minimo(l.Fim, fim) - inicio
+            }).ToImmutableArray();
+        return new(projeto with { LinhaDoTempo = clipes.ToImmutable(), Camadas = camadas, Legendas = legendas, Cursor = TempoMidia.Zero, Selecao = null, ItemSelecionadoId = null }, cortes);
     }
 
     private long TamanhoBlocos() => Directory.GetFiles(pasta, "bloco-*.nut").Sum(a => new FileInfo(a).Length);

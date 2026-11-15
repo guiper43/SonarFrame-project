@@ -89,12 +89,30 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
         foreach (var camada in projeto.Camadas.Where(c => c.Inicio <= instante && instante < c.Inicio + c.Clipe.Duracao))
             await AdicionarAsync(camada.Clipe, camada.Inicio).ConfigureAwait(false);
-        filtros.Append($"[{visual}]format=rgb24[quadro]");
-        argumentos.AddRange(["-filter_complex_threads", "1", "-filter_complex", filtros.ToString(), "-map", "[quadro]", "-frames:v", "1", "-an", "-threads", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]);
-        var png = await DecodificarPngAsync(argumentos, token).ConfigureAwait(false);
-        if (await Task.Run(() => Chave(projeto), token).ConfigureAwait(false) != chave)
-            throw new IOException("Uma mídia mudou durante a busca. Tente novamente.");
-        return new(destino, png);
+        string? arquivoAss = null;
+        var legendasAtivas = projeto.Legendas.Where(l => l.Inicio <= instante && instante < l.Fim)
+            .Select(l => l with { Inicio = TempoMidia.Zero, Fim = TempoMidia.Segundos(10) }).ToArray();
+        try
+        {
+            if (legendasAtivas.Length > 0)
+            {
+                PrepararPasta();
+                arquivoAss = Path.Combine(pasta, $"quadro-legenda-{Guid.NewGuid():N}.ass");
+                await EscreverAssAsync(arquivoAss, legendasAtivas, largura, altura, token).ConfigureAwait(false);
+                filtros.Append($"[{visual}]{FiltroAss(arquivoAss)}[sleg];");
+                visual = "sleg";
+            }
+            filtros.Append($"[{visual}]format=rgb24[quadro]");
+            argumentos.AddRange(["-filter_complex_threads", "1", "-filter_complex", filtros.ToString(), "-map", "[quadro]", "-frames:v", "1", "-an", "-threads", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]);
+            var png = await DecodificarPngAsync(argumentos, token).ConfigureAwait(false);
+            if (await Task.Run(() => Chave(projeto), token).ConfigureAwait(false) != chave)
+                throw new IOException("Uma mídia mudou durante a busca. Tente novamente.");
+            return new(destino, png);
+        }
+        finally
+        {
+            if (arquivoAss is not null) File.Delete(arquivoAss);
+        }
     }
 
     private async Task<byte[]> DecodificarPngAsync(IEnumerable<string> argumentos, CancellationToken token)

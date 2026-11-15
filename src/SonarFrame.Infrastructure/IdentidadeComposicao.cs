@@ -72,7 +72,16 @@ public sealed partial class PreparadorComposicaoFfmpeg
         {
             Perfil = 6, Audio = audio, Sequencia = Normalizar(projeto).LinhaDoTempo.Select(Conteudo),
             Camadas = projeto.Camadas.Where(c => audio is null || projeto.Biblioteca.Single(m => m.Id == c.Clipe.MidiaId).Tipo != (audio.Value ? TipoMidia.Imagem : TipoMidia.Audio))
-                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe) })
+                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe) }),
+            Legendas = audio == true ? [] : projeto.Legendas
+                .Where(l => l.Inicio < projeto.Duracao && l.Fim > TempoMidia.Zero)
+                .Select(l => new
+                {
+                    Inicio = TempoMidia.Maximo(l.Inicio, TempoMidia.Zero),
+                    Fim = TempoMidia.Minimo(l.Fim, projeto.Duracao),
+                    l.Texto,
+                    l.Estilo
+                }).ToArray()
         })));
     }
 
