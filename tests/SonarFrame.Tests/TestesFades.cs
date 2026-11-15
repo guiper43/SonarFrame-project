@@ -223,6 +223,42 @@ public sealed class TestesFades
         finally { Directory.Delete(pasta, true); }
     }
 
+    [MidiasReaisFact]
+    public async Task PreviaPreservaFadeVisualEntreClipesComVolumesDiferentesEAtualizaSomenteCacheDeVideo()
+    {
+        var pasta = Path.Combine(Path.GetTempPath(), "sonarframe-fades-uniao-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(pasta);
+        try
+        {
+            var video = Path.Combine(pasta, "branco.mp4");
+            await Ffmpeg("-f", "lavfi", "-i", "color=white:s=160x90:r=30:d=4",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", video);
+            var midia = new Midia(Guid.NewGuid(), "Base", video, TipoMidia.Video, Segundos(4), new(30, 1));
+            var primeiro = new Clipe(Guid.NewGuid(), midia.Id, "Primeiro", TempoMidia.Zero, Segundos(2), 100, FadeInAudio: Segundos(1));
+            var segundo = new Clipe(Guid.NewGuid(), midia.Id, "Segundo", Segundos(2), Segundos(2), 50, FadeOutVideo: Segundos(1));
+            var projeto = Projeto.Criar("Fades e volumes") with { Biblioteca = [midia], LinhaDoTempo = [primeiro, segundo] };
+            await using var preparador = new PreparadorComposicaoFfmpeg(Environment.GetEnvironmentVariable("SONARFRAME_FFMPEG")!,
+                new ExecutorFfprobe(Environment.GetEnvironmentVariable("SONARFRAME_FFPROBE")!));
+            async Task<byte[]> PixelsAsync(Projeto atual, string nome)
+            {
+                var previa = await preparador.PrepararAsync(atual, null, CancellationToken.None);
+                var pixels = Path.Combine(pasta, nome);
+                await Ffmpeg("-i", previa.Caminho, "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-an", pixels);
+                return await File.ReadAllBytesAsync(pixels);
+            }
+            var inicial = await PixelsAsync(projeto, "inicial.rgb");
+            Assert.InRange(inicial[105 * 3], (byte)90, (byte)170);
+            var alterado = projeto with { LinhaDoTempo = [primeiro, segundo with { FadeOutVideo = Segundos(2) }] };
+            var atualizado = await PixelsAsync(alterado, "atualizado.rgb");
+            Assert.Equal(1, preparador.UltimoDiagnostico!.VideosRenderizados);
+            Assert.Equal(0, preparador.UltimoDiagnostico.AudiosRenderizados);
+            Assert.True(atualizado[105 * 3] < inicial[105 * 3] - 30);
+            Assert.InRange(atualizado[45 * 3], (byte)240, (byte)255);
+        }
+        finally { Directory.Delete(pasta, true); }
+    }
+
     private static async Task<(byte R, byte G, byte B)> PixelRgbAsync(string pasta, string nome, byte[] png)
     {
         var entrada = Path.Combine(pasta, nome);

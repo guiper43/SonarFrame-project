@@ -47,7 +47,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
         PerfilVideo? perfil = null, Action<TempoMidia>? progresso = null, IReadOnlyDictionary<Guid, CorteFade>? cortes = null)
     {
         perfil ??= PerfilVideo.Previa;
-        if (!somenteAudio && !perfil.Exportacao) projeto = SemAudioNaSequencia(projeto);
+        if (!somenteAudio && !perfil.Exportacao) projeto = SemAudioNaSequencia(projeto, preservarFades: cortes is not null);
         var fontes = Fontes(projeto);
         var argumentos = new List<string> { "-hide_banner", "-v", "error", "-nostdin", "-y" };
         var filtrosVideo = new StringBuilder();
