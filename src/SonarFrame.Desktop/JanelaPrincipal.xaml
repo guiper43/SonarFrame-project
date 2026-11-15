@@ -70,6 +70,8 @@
        <StackPanel><TextBox x:Name="Propriedades" IsReadOnly="True" BorderThickness="0" TextWrapping="Wrap" MinHeight="100" AutomationProperties.Name="Propriedades do elemento selecionado" Text="Selecione um conteúdo na biblioteca ou na linha do tempo."/>
         <TextBlock Text="Selecionar um conteúdo não inicia a reprodução." Margin="0,8"/>
         <Button x:Name="BotaoVolume" Content="Ajustar volume…" Click="AlterarVolume" IsEnabled="False"/>
+        <Button x:Name="BotaoFades" Content="Configurar fades…" Click="ConfigurarFades" IsEnabled="False"/>
+        <Button x:Name="BotaoRemoverFades" Content="Remover fades" Click="RemoverFades" IsEnabled="False"/>
         <Button x:Name="BotaoEditarCamada" Content="Editar intervalo da camada…" Click="EditarCamada" IsEnabled="False"/>
         <Button x:Name="BotaoRemoverCamada" Content="Remover camada" Click="ExcluirCamada" IsEnabled="False"/>
        </StackPanel>
@@ -85,6 +87,8 @@
           <MenuItem x:Name="MenuConsultarTempo" Header="Consultar posição e intervalo" Click="LerPosicao"/>
           <MenuItem x:Name="MenuDividir" Header="Dividir no cursor" InputGestureText="Ctrl+B" Click="DividirNoCursor"/>
           <MenuItem x:Name="MenuExcluirSelecao" Header="Excluir intervalo selecionado" Click="ExcluirIntervaloSelecionado"/>
+          <MenuItem x:Name="MenuConfigurarFades" Header="Configurar fades…" Click="ConfigurarFadesMenu"/>
+          <MenuItem x:Name="MenuRemoverFades" Header="Remover fades" Click="RemoverFadesMenu"/>
           <MenuItem x:Name="MenuRemoverComposicao" Header="Remover vídeo da composição" Click="RemoverDaComposicao"/>
           <Separator/>
           <MenuItem x:Name="MenuMoverInicio" Header="Mover para o início" Click="MoverParaInicio"/>

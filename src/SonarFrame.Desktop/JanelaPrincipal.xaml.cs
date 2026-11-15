@@ -131,9 +131,13 @@ public partial class JanelaPrincipal : Window
         MenuDividir.IsEnabled = p.LinhaDoTempo.Length > 0;
         var conteudoSelecionado = new AcoesEdicao(sessao).Conteudos().SingleOrDefault(c => c.Id == p.ItemSelecionadoId);
         BotaoVolume.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && p.Biblioteca.Single(a => a.Id == conteudoSelecionado.MidiaId).Tipo != TipoMidia.Imagem;
+        BotaoFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null;
+        BotaoRemoverFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.TemFades == true;
         BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.EhCamada == true;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && p.Duracao > TempoMidia.Zero;
         BotaoRemoverMidia.IsEnabled = Biblioteca.SelectedItems.Count > 0;
+        MenuConfigurarFades.IsEnabled = conteudoSelecionado is not null;
+        MenuRemoverFades.IsEnabled = conteudoSelecionado?.TemFades == true;
         MenuRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
         MenuMoverAntes.IsEnabled = MenuMoverDepois.IsEnabled = MenuMoverInicio.IsEnabled = MenuMoverFim.IsEnabled = conteudoSelecionado?.EhCamada == false;
         AtualizarControlesPrevia();
@@ -223,7 +227,7 @@ public partial class JanelaPrincipal : Window
         exibirPropriedadesBiblioteca = true;
         BotaoInserir.IsEnabled = Biblioteca.SelectedItems.Count > 0;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && sessao.Atual.Duracao > TempoMidia.Zero;
-        BotaoVolume.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
+        BotaoVolume.IsEnabled = BotaoFades.IsEnabled = BotaoRemoverFades.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
         if (Biblioteca.SelectedItem is Linha linha)
             DescreverMidia(linha.Id);
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";

@@ -58,6 +58,7 @@ O arquivo `%LOCALAPPDATA%/sonarFrame/diagnostico-reproducao.json` registra a abe
 - **Dividir no cursor** separa o clipe principal que contém a posição temporal atual. O cursor precisa estar dentro do clipe, não em uma de suas extremidades.
 - **Excluir intervalo selecionado** remove a seleção temporal e fecha a lacuna. Camadas que cruzam o intervalo são recortadas, e as posteriores são deslocadas.
 - **Ajustar volume** nas propriedades altera o áudio do conteúdo selecionado entre 0 e 200%. Imagens não oferecem esse controle.
+- **Configurar fades** e **Remover fades** (em Propriedades ou no menu contextual da timeline) configuram durações independentes de *fade-in* e *fade-out* de áudio e vídeo conforme o tipo da mídia, exigindo que a soma `fade-in + fade-out` não ultrapasse a duração do conteúdo.
 - **Adicionar como camada** insere uma mídia da biblioteca em um intervalo independente. O diálogo permite definir início na composição, início na origem e duração. A camada precisa caber na composição e na mídia de origem.
 - **Editar intervalo da camada** e **Remover camada** atuam somente na camada selecionada e não encurtam a sequência principal.
 - Todas essas operações permitem desfazer/refazer. A lista identifica nome, tipo de mídia, ordem na lista, sequência principal ou camada, início, fim e duração. Mover para a posição atual não cria uma edição no histórico.

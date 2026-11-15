@@ -8,34 +8,69 @@ namespace SonarFrame.Infrastructure;
 
 public sealed partial class PreparadorComposicaoFfmpeg
 {
+    private sealed record CorteFade(
+        TempoMidia FadeInAudio, TempoMidia AtrasoInAudio,
+        TempoMidia FadeOutAudio, TempoMidia RestanteOutAudio,
+        TempoMidia FadeInVideo, TempoMidia AtrasoInVideo,
+        TempoMidia FadeOutVideo, TempoMidia RestanteOutVideo);
+
+    private sealed record BlocoRecortado(Projeto Projeto, IReadOnlyDictionary<Guid, CorteFade> Cortes);
+
+    private static bool PodeUnir(Clipe anterior, Clipe seguinte)
+        => anterior.MidiaId == seguinte.MidiaId && anterior.Volume == seguinte.Volume
+            && anterior.InicioNaOrigem + anterior.Duracao == seguinte.InicioNaOrigem
+            && anterior.FadeOutAudio == TempoMidia.Zero && anterior.FadeOutVideo == TempoMidia.Zero
+            && seguinte.FadeInAudio == TempoMidia.Zero && seguinte.FadeInVideo == TempoMidia.Zero;
+
+    private static Projeto SemAudioNaSequencia(Projeto projeto)
+        => Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100, FadeInAudio = TempoMidia.Zero, FadeOutAudio = TempoMidia.Zero })] });
+
     private static Projeto Normalizar(Projeto projeto)
     {
         var clipes = ImmutableArray.CreateBuilder<Clipe>();
         foreach (var clipe in projeto.LinhaDoTempo)
         {
-            if (clipes.Count > 0 && clipes[^1] is { } anterior && anterior.MidiaId == clipe.MidiaId && anterior.Volume == clipe.Volume
-                && anterior.InicioNaOrigem + anterior.Duracao == clipe.InicioNaOrigem)
-                clipes[^1] = anterior with { Duracao = anterior.Duracao + clipe.Duracao };
+            if (clipes.Count > 0 && clipes[^1] is { } anterior && PodeUnir(anterior, clipe))
+                clipes[^1] = anterior with
+                {
+                    Duracao = anterior.Duracao + clipe.Duracao,
+                    FadeOutAudio = clipe.FadeOutAudio,
+                    FadeOutVideo = clipe.FadeOutVideo
+                };
             else clipes.Add(clipe);
         }
         return projeto with { LinhaDoTempo = clipes.ToImmutable(), ItemSelecionadoId = null };
     }
 
-    private static string ChaveConteudo(Projeto projeto, bool? audio = null)
+    private static string ChaveConteudo(Projeto projeto, bool? audio = null, IReadOnlyDictionary<Guid, CorteFade>? cortes = null)
     {
-        if (audio == false) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
+        if (audio == false) projeto = SemAudioNaSequencia(projeto);
         object Conteudo(Clipe clipe)
         {
             var midia = projeto.Biblioteca.Single(m => m.Id == clipe.MidiaId);
             if (audio == false && midia.Tipo == TipoMidia.Audio || audio == true && midia.Tipo == TipoMidia.Imagem)
                 return new { clipe.Duracao };
             var arquivo = IdentificarMetadados(midia);
-            return new { arquivo, Origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem,
-                clipe.Duracao, Volume = audio == false ? 100 : clipe.Volume };
+            var corte = cortes is not null && cortes.TryGetValue(clipe.Id, out var c) ? c : null;
+            return new
+            {
+                arquivo,
+                Origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem,
+                clipe.Duracao,
+                Volume = audio == false ? 100 : clipe.Volume,
+                FadeInAudio = audio == false ? TempoMidia.Zero : corte?.FadeInAudio ?? clipe.FadeInAudio,
+                AtrasoInAudio = audio == false ? TempoMidia.Zero : corte?.AtrasoInAudio ?? TempoMidia.Zero,
+                FadeOutAudio = audio == false ? TempoMidia.Zero : corte?.FadeOutAudio ?? clipe.FadeOutAudio,
+                RestanteOutAudio = audio == false ? TempoMidia.Zero : corte?.RestanteOutAudio ?? TempoMidia.Zero,
+                FadeInVideo = audio == true ? TempoMidia.Zero : corte?.FadeInVideo ?? clipe.FadeInVideo,
+                AtrasoInVideo = audio == true ? TempoMidia.Zero : corte?.AtrasoInVideo ?? TempoMidia.Zero,
+                FadeOutVideo = audio == true ? TempoMidia.Zero : corte?.FadeOutVideo ?? clipe.FadeOutVideo,
+                RestanteOutVideo = audio == true ? TempoMidia.Zero : corte?.RestanteOutVideo ?? TempoMidia.Zero
+            };
         }
         return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            Perfil = 4, Audio = audio, Sequencia = Normalizar(projeto).LinhaDoTempo.Select(Conteudo),
+            Perfil = 6, Audio = audio, Sequencia = Normalizar(projeto).LinhaDoTempo.Select(Conteudo),
             Camadas = projeto.Camadas.Where(c => audio is null || projeto.Biblioteca.Single(m => m.Id == c.Clipe.MidiaId).Tipo != (audio.Value ? TipoMidia.Imagem : TipoMidia.Audio))
                 .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe) })
         })));
@@ -58,7 +93,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
             if (proximo > inicio && proximo < fim && NaGrade(proximo)) fim = proximo;
             var fimClipe = inicioClipe + clipe.Duracao;
             var continuaOrigem = indice + 1 < projeto.LinhaDoTempo.Length && projeto.LinhaDoTempo[indice + 1] is { } seguinte
-                && seguinte.MidiaId == clipe.MidiaId && clipe.InicioNaOrigem + clipe.Duracao == seguinte.InicioNaOrigem;
+                && seguinte.MidiaId == clipe.MidiaId && clipe.InicioNaOrigem + clipe.Duracao == seguinte.InicioNaOrigem
+                && clipe.FadeOutAudio == TempoMidia.Zero && clipe.FadeOutVideo == TempoMidia.Zero
+                && seguinte.FadeInAudio == TempoMidia.Zero && seguinte.FadeInVideo == TempoMidia.Zero;
             if (!continuaOrigem && fimClipe > inicio && fimClipe < fim && NaGrade(fimClipe)) fim = fimClipe;
             yield return (inicio, fim);
             inicio = fim;

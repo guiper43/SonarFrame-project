@@ -15,7 +15,11 @@ public sealed record Clipe(Guid Id,
     [property: JsonPropertyName("AssetId")] Guid MidiaId,
     [property: JsonPropertyName("Name")] string Nome,
     [property: JsonPropertyName("SourceStart")] TempoMidia InicioNaOrigem,
-    [property: JsonPropertyName("Duration")] TempoMidia Duracao, int Volume = 100);
+    [property: JsonPropertyName("Duration")] TempoMidia Duracao, int Volume = 100,
+    [property: JsonPropertyName("AudioFadeIn"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] TempoMidia FadeInAudio = default,
+    [property: JsonPropertyName("AudioFadeOut"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] TempoMidia FadeOutAudio = default,
+    [property: JsonPropertyName("VideoFadeIn"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] TempoMidia FadeInVideo = default,
+    [property: JsonPropertyName("VideoFadeOut"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] TempoMidia FadeOutVideo = default);
 public sealed record CamadaTemporal([property: JsonPropertyName("Clip")] Clipe Clipe, [property: JsonPropertyName("Start")] TempoMidia Inicio);
 public sealed record SelecaoTemporal([property: JsonPropertyName("Anchor")] TempoMidia Ancora, [property: JsonPropertyName("Active")] TempoMidia ExtremidadeAtiva)
 {
@@ -52,6 +56,11 @@ public sealed record Projeto(Guid Id,
             var midia = Biblioteca.SingleOrDefault(a => a.Id == c.MidiaId) ?? throw new ArgumentException("Mídia não encontrada.");
             if (c.Id == Guid.Empty || string.IsNullOrWhiteSpace(c.Nome) || c.InicioNaOrigem < TempoMidia.Zero || c.Duracao <= TempoMidia.Zero || c.Volume is < 0 or > 200) throw new ArgumentException("Clipe inválido.");
             if (midia.Duracao is { } d && c.InicioNaOrigem + c.Duracao > d) throw new ArgumentException("Clipe ultrapassa a origem.");
+            if (c.FadeInAudio < TempoMidia.Zero || c.FadeOutAudio < TempoMidia.Zero || c.FadeInVideo < TempoMidia.Zero || c.FadeOutVideo < TempoMidia.Zero) throw new ArgumentException("Duração de fade inválida.");
+            if (midia.Tipo == TipoMidia.Imagem && (c.FadeInAudio > TempoMidia.Zero || c.FadeOutAudio > TempoMidia.Zero)) throw new ArgumentException("Imagens não possuem fade de áudio.");
+            if (midia.Tipo == TipoMidia.Audio && (c.FadeInVideo > TempoMidia.Zero || c.FadeOutVideo > TempoMidia.Zero)) throw new ArgumentException("Áudios não possuem fade de vídeo.");
+            if (c.FadeInAudio + c.FadeOutAudio > c.Duracao) throw new ArgumentException("A soma de fade-in e fade-out de áudio não pode ultrapassar a duração do conteúdo.");
+            if (c.FadeInVideo + c.FadeOutVideo > c.Duracao) throw new ArgumentException("A soma de fade-in e fade-out de vídeo não pode ultrapassar a duração do conteúdo.");
         }
         if (Camadas.Any(l => l.Inicio < TempoMidia.Zero || l.Inicio + l.Clipe.Duracao > Duracao)) throw new ArgumentException("Camada fora da composição.");
         if (Cursor < TempoMidia.Zero || Cursor > Duracao) throw new ArgumentException("Cursor fora da composição.");
