@@ -144,6 +144,55 @@ public sealed class TestesLegendasDesktop
             Assert.True(janela.LinhaDoTempo.IsKeyboardFocusWithin);
         });
 
+    [Fact]
+    public Task EscolherLegendaSimultaneaPermiteEditarCadaTextoECancelarPreservandoCursorEFoco() =>
+        TestesIntegracaoEditor.ComJanela(async (janela, caminho) =>
+        {
+            var sessao = new SessaoEdicao(Projeto.Criar("Legendas simultâneas"));
+            var video = new Midia(Guid.NewGuid(), "Vídeo", "video.mp4", TipoMidia.Video, TempoMidia.Segundos(4));
+            sessao.Executar(new RegistrarMidia(video));
+            sessao.Executar(new InserirClipe(video.Id, 0));
+            var legendas = LeitorSrt.Ler("1\n00:00:01,000 --> 00:00:03,000\nPrimeira\n\n2\n00:00:01,000 --> 00:00:03,000\nSegunda");
+            sessao.Executar(new DefinirLegendas(legendas));
+            sessao.Posicionar(TempoMidia.Segundos(2));
+            janela.ExibirProjeto(sessao.Atual, salvo: true, caminho: caminho);
+            janela.ShowActivated = false; janela.ShowInTaskbar = false; janela.Left = -10000; janela.Top = -10000; janela.Show();
+            janela.LinhaDoTempo.SelectedIndex = 0;
+            for (var indice = 0; indice < legendas.Length; indice++)
+            {
+                var escolha = janela.CriarDialogoEscolhaLegenda(legendas);
+                escolha.Dialogo.WindowStartupLocation = WindowStartupLocation.Manual;
+                escolha.Dialogo.Left = -10000; escolha.Dialogo.Top = -10000;
+                escolha.Dialogo.ShowActivated = false; escolha.Dialogo.ShowInTaskbar = false;
+                try
+                {
+                    escolha.Dialogo.Show();
+                    Assert.Equal("Legendas ativas nesta posição", AutomationProperties.GetName(escolha.Lista));
+                    Assert.Contains("Cima e Baixo", AutomationProperties.GetHelpText(escolha.Lista));
+                    Assert.True(escolha.Lista.IsKeyboardFocusWithin);
+                    Assert.Contains(legendas[indice].Texto, Assert.IsType<string>(escolha.Lista.Items[indice]));
+                    escolha.Lista.SelectedIndex = indice;
+                    escolha.Confirmar.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    var selecionada = escolha.ObterResultado();
+                    Assert.Equal(legendas[indice].Id, selecionada!.Id);
+                    janela.SolicitarLegendaAtivaOverride = ativas => ativas.Single(l => l.Id == selecionada.Id);
+                    janela.SolicitarEdicaoLegendaOverride = l => (l.Texto + " revisada", l.Estilo, EscopoEstiloLegenda.ApenasSelecionada);
+                    await janela.EditarLegendaAsync(janela.LinhaDoTempo);
+                    Assert.Equal(legendas[indice].Texto + " revisada", janela.SessaoAtual!.Atual.Legendas[indice].Texto);
+                    Assert.Equal(TempoMidia.Segundos(2), janela.SessaoAtual.Atual.Cursor);
+                    Assert.True(janela.LinhaDoTempo.IsKeyboardFocusWithin);
+                }
+                finally { escolha.Dialogo.Close(); }
+            }
+            var antes = janela.SessaoAtual!.Atual;
+            janela.SolicitarLegendaAtivaOverride = _ => null;
+            janela.SolicitarEdicaoLegendaOverride = _ => throw new InvalidOperationException("Não deve abrir o editor após cancelar a escolha.");
+            await janela.EditarLegendaAsync(janela.LinhaDoTempo);
+            Assert.Equal(antes, janela.SessaoAtual.Atual);
+            Assert.Contains("Edição de legenda cancelada", janela.Situacao.Text);
+            Assert.True(janela.LinhaDoTempo.IsKeyboardFocusWithin);
+        });
+
     private sealed class LeitorMetadadosFalso : ILeitorMetadadosMidia
     {
         public Task<Midia> LerAsync(string caminho, CancellationToken cancellationToken = default)

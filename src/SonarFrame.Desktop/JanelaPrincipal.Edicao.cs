@@ -41,6 +41,7 @@ public partial class JanelaPrincipal
         Func<(string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)?> ObterResultado);
     internal Func<ItemComposicao, TipoMidia, (TempoMidia FadeInAudio, TempoMidia FadeOutAudio, TempoMidia FadeInVideo, TempoMidia FadeOutVideo)?>? SolicitarFadesOverride { get; set; }
     internal Func<Legenda, (string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)?>? SolicitarEdicaoLegendaOverride { get; set; }
+    internal Func<IReadOnlyList<Legenda>, Legenda?>? SolicitarLegendaAtivaOverride { get; set; }
     private void DescreverMidia(Guid id)
     {
         if (sessao is null) return;
@@ -272,16 +273,18 @@ public partial class JanelaPrincipal
             var tinhaComposicao = composicaoAtiva && !sessao.Atual.LinhaDoTempo.IsEmpty;
             if (!await PrepararEdicaoAsync()) return;
             var cursorAnterior = sessao.Atual.Cursor;
-            var legenda = new AcoesEdicao(sessao).LegendaAtiva();
-            if (legenda is null)
+            var legendas = new AcoesEdicao(sessao).LegendasAtivas();
+            if (legendas.Count == 0)
             {
                 Anunciar("Posicione o cursor sobre um trecho com legenda ativa e mantenha a prévia pausada para editar a legenda.");
                 return;
             }
-            var edicao = SolicitarEdicaoLegendaOverride is { } overrideLegenda
+            var legenda = legendas.Count == 1 ? legendas[0]
+                : SolicitarLegendaAtivaOverride is { } escolherLegenda ? escolherLegenda(legendas) : SolicitarLegendaAtiva(legendas);
+            var edicao = legenda is null ? null : SolicitarEdicaoLegendaOverride is { } overrideLegenda
                 ? overrideLegenda(legenda)
                 : SolicitarEdicaoLegenda(legenda);
-            if (edicao is { } dados)
+            if (edicao is { } dados && legenda is not null)
             {
                 var escopoTexto = dados.Escopo == EscopoEstiloLegenda.TodasDoProjeto ? "estilo aplicado a todas as legendas do projeto" : "estilo aplicado à legenda atual";
                 await AplicarAcaoAsync(a => a.EditarLegenda(legenda.Id, dados.Texto, dados.Estilo, dados.Escopo),
@@ -299,9 +302,52 @@ public partial class JanelaPrincipal
                 AtualizarPosicaoPrevia();
             }
         }
-        finally { editandoLegenda = false; }
-        if (ReferenceEquals(destinoFoco, LinhaDoTempo)) FocarConteudoSelecionado();
-        else RestaurarFocoAposDialogo(destinoFoco, LinhaDoTempo);
+        finally
+        {
+            editandoLegenda = false;
+            if (ReferenceEquals(destinoFoco, LinhaDoTempo)) FocarConteudoSelecionado();
+            else RestaurarFocoAposDialogo(destinoFoco, LinhaDoTempo);
+        }
+    }
+    private Legenda? SolicitarLegendaAtiva(IReadOnlyList<Legenda> legendas)
+    {
+        var escolha = CriarDialogoEscolhaLegenda(legendas);
+        escolha.Dialogo.ShowDialog();
+        return escolha.ObterResultado();
+    }
+    internal (Window Dialogo, ListBox Lista, Button Confirmar, Func<Legenda?> ObterResultado) CriarDialogoEscolhaLegenda(IReadOnlyList<Legenda> legendas)
+    {
+        Legenda? resultado = null;
+        var painel = new StackPanel();
+        var lista = new ListBox
+        {
+            ItemsSource = legendas.Select((l, i) => $"Legenda {i + 1}: {l.Texto.Replace('\n', ' ')}. De {l.Inicio} até {l.Fim}.").ToArray(),
+            SelectedIndex = 0,
+            MaxHeight = 180,
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "_Legendas ativas nesta posição", Target = lista });
+        AutomationProperties.SetName(lista, "Legendas ativas nesta posição");
+        AutomationProperties.SetHelpText(lista, "Use Cima e Baixo para escolher a legenda e Enter para editar.");
+        painel.Children.Add(lista);
+        var dialogo = CriarDialogo("Escolher legenda para editar", painel);
+        var confirmar = new Button { Content = "_Editar legenda", IsDefault = true };
+        confirmar.Click += (_, _) =>
+        {
+            if (lista.SelectedIndex < 0) return;
+            resultado = legendas[lista.SelectedIndex];
+            if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) dialogo.DialogResult = true;
+            else dialogo.Close();
+        };
+        painel.Children.Add(confirmar);
+        AdicionarFechar(dialogo, painel, "Cancelar");
+        dialogo.Loaded += (_, _) =>
+        {
+            lista.UpdateLayout();
+            if (lista.ItemContainerGenerator.ContainerFromIndex(lista.SelectedIndex) is ListBoxItem item) item.Focus();
+            else lista.Focus();
+        };
+        return (dialogo, lista, confirmar, () => resultado);
     }
     private (string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)? SolicitarEdicaoLegenda(Legenda legenda)
     {

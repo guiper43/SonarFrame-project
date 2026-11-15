@@ -123,6 +123,24 @@ public sealed class TestesLegendasSrt
         finally { Directory.Delete(diretorio, true); }
     }
 
+    [Fact]
+    public void LegendasSimultaneasPodemSerEditadasIndividualmenteSemAlterarAsDemais()
+    {
+        var sessao = Sessao();
+        var acoes = new AcoesEdicao(sessao);
+        var legendas = LeitorSrt.Ler("1\n00:00:01,000 --> 00:00:03,000\nPrimeira\n\n2\n00:00:01,000 --> 00:00:03,000\nSegunda");
+        acoes.DefinirLegendas(legendas);
+        sessao.Posicionar(Segundos(1));
+        Assert.Equal(legendas.Select(l => l.Id), acoes.LegendasAtivas().Select(l => l.Id));
+        acoes.EditarLegenda(legendas[0].Id, "Primeira revisada", EstiloLegenda.Padrao, EscopoEstiloLegenda.ApenasSelecionada);
+        Assert.Equal("Primeira revisada", sessao.Atual.Legendas[0].Texto);
+        Assert.Equal("Segunda", sessao.Atual.Legendas[1].Texto);
+        sessao.Desfazer();
+        Assert.Equal("Primeira", sessao.Atual.Legendas[0].Texto);
+        sessao.Posicionar(Segundos(3));
+        Assert.Empty(acoes.LegendasAtivas());
+    }
+
     [MidiasReaisFact]
     public async Task LegendasRenderizamNosQuadrosPreviaEExportacaoMp4SemInvalidarCacheDeAudio()
     {

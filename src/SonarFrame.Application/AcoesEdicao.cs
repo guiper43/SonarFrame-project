@@ -54,6 +54,8 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
         => DefinirFadesSelecionado(TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero);
     public Legenda? LegendaAtiva()
         => sessao.Atual.Legendas.LastOrDefault(l => l.Inicio <= sessao.Atual.Cursor && sessao.Atual.Cursor < l.Fim);
+    public IReadOnlyList<Legenda> LegendasAtivas()
+        => sessao.Atual.Legendas.Where(l => l.Inicio <= sessao.Atual.Cursor && sessao.Atual.Cursor < l.Fim).ToArray();
     public void DefinirLegendas(ImmutableArray<Legenda> legendas)
         => sessao.Executar(new DefinirLegendas(legendas));
     public void EditarLegenda(Guid legendaId, string texto, EstiloLegenda estilo, EscopoEstiloLegenda escopo)
