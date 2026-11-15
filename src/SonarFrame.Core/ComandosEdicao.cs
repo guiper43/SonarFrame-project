@@ -55,8 +55,19 @@ public sealed record DividirClipe(Guid ClipeId, TempoMidia Deslocamento) : IComa
         if (indice < 0) throw new ArgumentException("Clipe não encontrado.");
         var clipe = p.LinhaDoTempo[indice];
         if (Deslocamento <= TempoMidia.Zero || Deslocamento >= clipe.Duracao) throw new ArgumentException("Divisão deve ocorrer dentro do clipe.");
-        var primeiro = clipe with { Nome = clipe.Nome + " — Parte 1", Duracao = Deslocamento };
-        var segundo = clipe with { Id = Guid.NewGuid(), Nome = clipe.Nome + " — Parte 2", InicioNaOrigem = clipe.InicioNaOrigem + Deslocamento, Duracao = clipe.Duracao - Deslocamento };
+        var restante = clipe.Duracao - Deslocamento;
+        var primeiro = clipe with
+        {
+            Nome = clipe.Nome + " — Parte 1", Duracao = Deslocamento,
+            FadeInAudio = TempoMidia.Minimo(clipe.FadeInAudio, Deslocamento), FadeOutAudio = TempoMidia.Zero,
+            FadeInVideo = TempoMidia.Minimo(clipe.FadeInVideo, Deslocamento), FadeOutVideo = TempoMidia.Zero
+        };
+        var segundo = clipe with
+        {
+            Id = Guid.NewGuid(), Nome = clipe.Nome + " — Parte 2", InicioNaOrigem = clipe.InicioNaOrigem + Deslocamento, Duracao = restante,
+            FadeInAudio = TempoMidia.Zero, FadeOutAudio = TempoMidia.Minimo(clipe.FadeOutAudio, restante),
+            FadeInVideo = TempoMidia.Zero, FadeOutVideo = TempoMidia.Minimo(clipe.FadeOutVideo, restante)
+        };
         return p with { LinhaDoTempo = p.LinhaDoTempo.SetItem(indice, primeiro).Insert(indice + 1, segundo) };
     }
 }
@@ -79,6 +90,19 @@ public sealed record DefinirVolume(Guid ClipeId, int Volume) : IComandoEdicao
         {
             LinhaDoTempo = p.LinhaDoTempo.Select(c => c.Id == ClipeId ? c with { Volume = Volume } : c).ToImmutableArray(),
             Camadas = p.Camadas.Select(l => l.Clipe.Id == ClipeId ? l with { Clipe = l.Clipe with { Volume = Volume } } : l).ToImmutableArray()
+        };
+    }
+}
+public sealed record DefinirFades(Guid ClipeId, TempoMidia FadeInAudio, TempoMidia FadeOutAudio, TempoMidia FadeInVideo, TempoMidia FadeOutVideo) : IComandoEdicao
+{
+    public Projeto Aplicar(Projeto p)
+    {
+        if (!p.LinhaDoTempo.Any(c => c.Id == ClipeId) && !p.Camadas.Any(l => l.Clipe.Id == ClipeId)) throw new ArgumentException("Clipe não encontrado.");
+        Clipe Atualizar(Clipe c) => c with { FadeInAudio = FadeInAudio, FadeOutAudio = FadeOutAudio, FadeInVideo = FadeInVideo, FadeOutVideo = FadeOutVideo };
+        return p with
+        {
+            LinhaDoTempo = p.LinhaDoTempo.Select(c => c.Id == ClipeId ? Atualizar(c) : c).ToImmutableArray(),
+            Camadas = p.Camadas.Select(l => l.Clipe.Id == ClipeId ? l with { Clipe = Atualizar(l.Clipe) } : l).ToImmutableArray()
         };
     }
 }
@@ -106,11 +130,18 @@ public sealed record ExcluirIntervalo(TempoMidia Inicio, TempoMidia Fim) : IComa
         if (posicao >= Fim) { yield return new(clipe, posicao - (Fim - Inicio)); yield break; }
         var esquerda = TempoMidia.Maximo(TempoMidia.Zero, Inicio - posicao);
         var direita = TempoMidia.Maximo(TempoMidia.Zero, fim - Fim);
-        if (esquerda > TempoMidia.Zero) yield return new(clipe with { Duracao = esquerda }, posicao);
+        if (esquerda > TempoMidia.Zero) yield return new(clipe with
+        {
+            Duracao = esquerda,
+            FadeInAudio = TempoMidia.Minimo(clipe.FadeInAudio, esquerda), FadeOutAudio = TempoMidia.Zero,
+            FadeInVideo = TempoMidia.Minimo(clipe.FadeInVideo, esquerda), FadeOutVideo = TempoMidia.Zero
+        }, posicao);
         if (direita > TempoMidia.Zero) yield return new(clipe with
         {
             Id = esquerda > TempoMidia.Zero ? Guid.NewGuid() : clipe.Id,
-            InicioNaOrigem = clipe.InicioNaOrigem + (clipe.Duracao - direita), Duracao = direita
+            InicioNaOrigem = clipe.InicioNaOrigem + (clipe.Duracao - direita), Duracao = direita,
+            FadeInAudio = TempoMidia.Zero, FadeOutAudio = TempoMidia.Minimo(clipe.FadeOutAudio, direita),
+            FadeInVideo = TempoMidia.Zero, FadeOutVideo = TempoMidia.Minimo(clipe.FadeOutVideo, direita)
         }, Inicio);
     }
 }

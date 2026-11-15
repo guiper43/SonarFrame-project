@@ -2,7 +2,11 @@ using SonarFrame.Core;
 
 namespace SonarFrame.Application;
 
-public sealed record ItemComposicao(Guid Id, string Nome, Guid MidiaId, TempoMidia Inicio, TempoMidia Duracao, int Volume, bool EhCamada);
+public sealed record ItemComposicao(Guid Id, string Nome, Guid MidiaId, TempoMidia Inicio, TempoMidia Duracao, int Volume, bool EhCamada,
+    TempoMidia FadeInAudio = default, TempoMidia FadeOutAudio = default, TempoMidia FadeInVideo = default, TempoMidia FadeOutVideo = default)
+{
+    public bool TemFades => FadeInAudio > TempoMidia.Zero || FadeOutAudio > TempoMidia.Zero || FadeInVideo > TempoMidia.Zero || FadeOutVideo > TempoMidia.Zero;
+}
 
 public sealed class AcoesEdicao(SessaoEdicao sessao)
 {
@@ -13,10 +17,12 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
         var resultado = new List<ItemComposicao>();
         foreach (var clipe in projeto.LinhaDoTempo)
         {
-            resultado.Add(new(clipe.Id, clipe.Nome, clipe.MidiaId, posicao, clipe.Duracao, clipe.Volume, false));
+            resultado.Add(new(clipe.Id, clipe.Nome, clipe.MidiaId, posicao, clipe.Duracao, clipe.Volume, false,
+                clipe.FadeInAudio, clipe.FadeOutAudio, clipe.FadeInVideo, clipe.FadeOutVideo));
             posicao += clipe.Duracao;
         }
-        resultado.AddRange(projeto.Camadas.Select(l => new ItemComposicao(l.Clipe.Id, l.Clipe.Nome, l.Clipe.MidiaId, l.Inicio, l.Clipe.Duracao, l.Clipe.Volume, true)));
+        resultado.AddRange(projeto.Camadas.Select(l => new ItemComposicao(l.Clipe.Id, l.Clipe.Nome, l.Clipe.MidiaId, l.Inicio, l.Clipe.Duracao, l.Clipe.Volume, true,
+            l.Clipe.FadeInAudio, l.Clipe.FadeOutAudio, l.Clipe.FadeInVideo, l.Clipe.FadeOutVideo)));
         return resultado.OrderBy(c => c.Inicio).ThenBy(c => c.EhCamada).ToArray();
     }
     public void DividirNoCursor()
@@ -38,6 +44,13 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
             throw new InvalidOperationException("Imagens não possuem volume.");
         sessao.Executar(new DefinirVolume(item.Id, volume));
     }
+    public void DefinirFadesSelecionado(TempoMidia fadeInAudio, TempoMidia fadeOutAudio, TempoMidia fadeInVideo, TempoMidia fadeOutVideo)
+    {
+        var item = Selecionado();
+        sessao.Executar(new DefinirFades(item.Id, fadeInAudio, fadeOutAudio, fadeInVideo, fadeOutVideo));
+    }
+    public void RemoverFadesSelecionado()
+        => DefinirFadesSelecionado(TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero);
     public ItemComposicao Selecionado() => Conteudos().SingleOrDefault(c => c.Id == sessao.Atual.ItemSelecionadoId)
         ?? throw new InvalidOperationException("Selecione um conteúdo da composição.");
 
