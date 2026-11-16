@@ -4,6 +4,7 @@
 |---|---|
 | Versão | 0.5 — identidade do produto e proposta visual |
 | Data | 18/10/2026 |
+| Atualização de escopo | 16/11/2026 — experiência visual complementar; ADR 0002 |
 | Nome aprovado do produto | **sonarFrame** |
 | Estado | Requisitos RF01–RF06, gerenciamento de projetos e RNF01 aprovados funcionalmente; marca visual proposta, ainda não aprovada; pendências identificadas |
 | Plataforma-alvo | Windows; aplicativo desktop instalável |
@@ -19,6 +20,8 @@
 Disponibilizar o **sonarFrame**, um editor de vídeo acessível, inicialmente para uso pessoal e posteriormente para avaliação por outras pessoas cegas. A edição deverá ser executável integralmente pelo teclado e compatível com o NVDA. O produto deverá privilegiar tarefas comuns de edição audiovisual, evitando configurações técnicas que não sejam necessárias para o usuário.
 
 O sonarFrame deverá oferecer importação de mídias, prévia, organização de uma linha do tempo, cortes, tratamento de áudio, legendas, elementos visuais, transições, salvamento de projetos e exportação. A inteligência artificial (IA) será opcional, sem substituir o controle do usuário sobre operações de edição.
+
+**Decisão de produto de 16/11/2026 — ampliação das modalidades de uso:** o sonarFrame deverá atender também pessoas que utilizam a visão e o mouse, incluindo pessoas com baixa visão ou que alternem modalidades de interação. A interface visual, o teclado e o NVDA deverão operar sobre o mesmo projeto e estado de edição. O uso integral pelo teclado e a compatibilidade com NVDA permanecem obrigatórios. A decisão está aprovada; sua implementação e seu aceite são incrementais, conforme [ADR 0002](adr/0002-edicao-visual-e-acessibilidade.md) e [plano da timeline visual](plano-timeline-visual.md).
 
 ### 1.2 Escopo inicial
 
@@ -294,6 +297,23 @@ O sonarFrame deverá oferecer importação de mídias, prévia, organização de
 - **RNF01.20 — Indicadores visuais.** A interface deverá oferecer foco visível, contraste adequado e informação que não dependa exclusivamente de cor.
 - **RNF01.21 — Testes contínuos.** A acessibilidade deverá ser verificada durante o desenvolvimento usando NVDA, navegação exclusivamente por teclado e ferramentas de inspeção de UI Automation.
 
+### 5.5 Experiência visual complementar
+
+**Estado: decisão aprovada em 16/11/2026; implementação incremental.** Não altera o estado histórico dos requisitos RNF01.01–21.
+
+- **RNF01.22 — Uso visual explícito.** O editor deverá permitir compreender e operar a composição por uma interface visual com mouse e teclado, sem exigir leitor de telas, mantendo o uso integral pelo teclado e a compatibilidade com NVDA.
+- **RNF01.23 — Estado e comandos compartilhados.** Apresentações gráfica e estruturada deverão compartilhar cursor, seleção temporal, item selecionado, composição e histórico. Operações equivalentes por mouse e teclado deverão produzir resultados equivalentes, preservando propriedades e mídias originais.
+- **RNF01.24 — Gestos complementares e canceláveis.** Toda operação oferecida por gesto deverá continuar disponível por teclado. Escape deverá cancelar gestos ainda não confirmados sem alterar a composição ou o histórico. Seleção e navegação não deverão iniciar reprodução implicitamente.
+- **RNF01.25 — Validação visual e assistiva.** A validação deverá incluir uso visual com mouse, uso somente por teclado e uso com NVDA; verificar foco visível, contraste, informação independente de cor e acesso a conteúdo em diferentes tamanhos e escalas de tela. Aceite humano deverá ser registrado separadamente dos testes automatizados.
+
+**Critérios de aceitação — experiência visual complementar**
+
+- **CA-RNF01-09:** reordenar um clipe por arraste e pelo comando de teclado equivalente produz a mesma ordem; desfazer/refazer restaura os estados correspondentes.
+- **CA-RNF01-10:** navegação e seleção na timeline gráfica refletem os tempos e o item selecionado na apresentação estruturada, e vice-versa, sem reprodução automática.
+- **CA-RNF01-11:** cancelar um arraste com Escape mantém composição e histórico anteriores.
+- **CA-RNF01-12:** cursor, seleção temporal e foco são distinguíveis sem depender apenas de cor; conteúdo e controles continuam alcançáveis em telas menores ou com escala ampliada.
+- **CA-RNF01-13:** os percursos visuais e com NVDA são avaliados separadamente; aprovação automatizada não é apresentada como aceite humano concluído.
+
 **Critérios de aceitação — RNF01**
 
 - **CA-RNF01-01:** é possível iniciar projeto, importar mídias, editar, salvar e exportar sem mouse.
@@ -354,6 +374,7 @@ As seguintes decisões **não** são tratadas como requisitos já aprovados:
 | RF06 | Exportação MP4, enquadramento e progresso acessível | CA-RF06-01 a 03 | Aprovado |
 | GP | SQLite, Meus projetos, autosave e recuperação | CA-GP-01 a 05 | Aprovado |
 | RNF01 | Navegação por regiões, lista estruturada e NVDA | CA-RNF01-01 a 08 | Aprovado |
+| RNF01.22–25 | Experiência visual complementar e estado compartilhado | CA-RNF01-09 a 13 | Decisão aprovada em 16/11/2026; implementação incremental |
 | RF07 | Conteúdo não recuperado | PEN-01 | Pendente |
 
 ## 9. Revisão da qualidade da especificação

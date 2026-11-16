@@ -64,6 +64,14 @@ SonarFrame.Desktop        interface WPF e adaptação LibVLCSharp (FabricaPrevia
 - **Persistência e recuperação**: todo salvamento grava primeiro `<projeto>.recovery` e depois o arquivo principal. A UI sempre oferece aceitar ou descartar a recuperação — nunca aplicá-la silenciosamente.
 - **Acessibilidade em `SonarFrame.Desktop`**: toda operação precisa funcionar 100% por teclado, com nomes e regiões de UI Automation coerentes para NVDA (ver skill `desktop-accessible-ui` e `docs/desktop.md`).
 
+# Experiência visual e modalidades de acesso
+
+- Decisão de produto de 16/11/2026: atender também pessoas que utilizam visão e mouse, incluindo baixa visão, mantendo operação integral por teclado e NVDA como requisitos obrigatórios.
+- Usar um único projeto, estado e histórico para apresentações gráfica e estruturada. Gestos visuais reutilizam comandos existentes e possuem alternativas por teclado; Escape cancela gestos não confirmados.
+- A timeline gráfica é uma apresentação complementar autorizada, na região existente, preservando a lista acessível, os menus e os atalhos. Componentes gráficos devem oferecer equivalência acessível e respeitar o tema Windows, alto contraste e foco visível.
+- Concentrar a integração visual em componentes e arquivos próprios; evitar reestruturar arquivos compartilhados com fades, legendas, propriedades visuais e instalador. Não alterar persistência ou domínio para armazenar coordenadas da interface.
+- Consultar a decisão completa em `docs/adr/0002-edicao-visual-e-acessibilidade.md` e os requisitos RNF01.22–25 da ERS. Miniaturas e ondas de áudio ficam fora da primeira entrega acordada.
+
 # Decisões de interação estabelecidas
 
 - Navegação temporal comum anuncia a direção, o deslocamento e a posição em minutos e segundos: “Avançou 1 segundo. Atualmente em 0 minutos e 22 segundos.” Para deslocamentos menores que um segundo, anunciar “menos de 1 segundo”, sem inventar um segundo inteiro. Anunciar milissegundos na seleção de intervalo e na confirmação de corte.
