@@ -4,6 +4,44 @@ using System.Text.Json.Serialization;
 namespace SonarFrame.Core;
 
 public enum TipoMidia { Video, Audio, Imagem }
+public enum PosicaoVisual
+{
+    SuperiorEsquerda,
+    SuperiorCentro,
+    SuperiorDireita,
+    CentroEsquerda,
+    Centro,
+    CentroDireita,
+    InferiorEsquerda,
+    InferiorCentro,
+    InferiorDireita
+}
+public enum ModoExibicaoVisual { Sobrepor, Substituir }
+public enum TamanhoVisual { Pequeno = 25, Medio = 50, Grande = 75, Personalizado = 0 }
+public enum AjusteVisual { PermitirBordas, PreencherInteiro }
+public sealed record LayoutVisual(
+    [property: JsonPropertyName("Mode")] ModoExibicaoVisual Modo = ModoExibicaoVisual.Sobrepor,
+    [property: JsonPropertyName("Position")] PosicaoVisual Posicao = PosicaoVisual.Centro,
+    [property: JsonPropertyName("ScalePercent")] int EscalaPercentual = 100,
+    [property: JsonPropertyName("Fit")] AjusteVisual Ajuste = AjusteVisual.PermitirBordas)
+{
+    public static LayoutVisual PadraoCamada { get; } = new();
+    public static LayoutVisual PadraoSequencia { get; } = new(ModoExibicaoVisual.Substituir, PosicaoVisual.Centro, 100, AjusteVisual.PermitirBordas);
+    [JsonIgnore] public TamanhoVisual Tamanho => EscalaPercentual switch
+    {
+        25 => TamanhoVisual.Pequeno,
+        50 => TamanhoVisual.Medio,
+        75 => TamanhoVisual.Grande,
+        _ => TamanhoVisual.Personalizado
+    };
+    public static bool Valido(LayoutVisual layout)
+        => layout is not null
+            && Enum.IsDefined(layout.Modo)
+            && Enum.IsDefined(layout.Posicao)
+            && Enum.IsDefined(layout.Ajuste)
+            && layout.EscalaPercentual is >= 5 and <= 100
+            && layout.EscalaPercentual % 5 == 0;
+}
 public sealed record Midia(Guid Id,
     [property: JsonPropertyName("Name")] string Nome,
     [property: JsonPropertyName("Path")] string Caminho,
@@ -15,7 +53,12 @@ public sealed record Clipe(Guid Id,
     [property: JsonPropertyName("AssetId")] Guid MidiaId,
     [property: JsonPropertyName("Name")] string Nome,
     [property: JsonPropertyName("SourceStart")] TempoMidia InicioNaOrigem,
-    [property: JsonPropertyName("Duration")] TempoMidia Duracao, int Volume = 100);
+    [property: JsonPropertyName("Duration")] TempoMidia Duracao, int Volume = 100,
+    [property: JsonPropertyName("VisualLayout"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LayoutVisual? Layout = null)
+{
+    public LayoutVisual ObterLayout(bool ehCamada)
+        => Layout ?? (ehCamada ? LayoutVisual.PadraoCamada : LayoutVisual.PadraoSequencia);
+}
 public sealed record CamadaTemporal([property: JsonPropertyName("Clip")] Clipe Clipe, [property: JsonPropertyName("Start")] TempoMidia Inicio);
 public sealed record SelecaoTemporal([property: JsonPropertyName("Anchor")] TempoMidia Ancora, [property: JsonPropertyName("Active")] TempoMidia ExtremidadeAtiva)
 {
@@ -52,7 +95,14 @@ public sealed record Projeto(Guid Id,
             var midia = Biblioteca.SingleOrDefault(a => a.Id == c.MidiaId) ?? throw new ArgumentException("Mídia não encontrada.");
             if (c.Id == Guid.Empty || string.IsNullOrWhiteSpace(c.Nome) || c.InicioNaOrigem < TempoMidia.Zero || c.Duracao <= TempoMidia.Zero || c.Volume is < 0 or > 200) throw new ArgumentException("Clipe inválido.");
             if (midia.Duracao is { } d && c.InicioNaOrigem + c.Duracao > d) throw new ArgumentException("Clipe ultrapassa a origem.");
+            if (c.Layout is { } layout)
+            {
+                if (!LayoutVisual.Valido(layout)) throw new ArgumentException("Propriedades visuais inválidas.");
+                if (midia.Tipo == TipoMidia.Audio) throw new ArgumentException("Mídias de áudio não admitem propriedades visuais.");
+            }
         }
+        if (LinhaDoTempo.Any(c => c.Layout is { Modo: not ModoExibicaoVisual.Substituir }))
+            throw new ArgumentException("Clipes da sequência principal utilizam apenas substituição visual.");
         if (Camadas.Any(l => l.Inicio < TempoMidia.Zero || l.Inicio + l.Clipe.Duracao > Duracao)) throw new ArgumentException("Camada fora da composição.");
         if (Cursor < TempoMidia.Zero || Cursor > Duracao) throw new ArgumentException("Cursor fora da composição.");
         if (Selecao is { } s && (s.Inicio < TempoMidia.Zero || s.Fim > Duracao)) throw new ArgumentException("Seleção fora da composição.");

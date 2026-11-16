@@ -28,22 +28,22 @@ public sealed record ReligarMidia(Guid MidiaId, string Caminho) : IComandoEdicao
         return p with { Biblioteca = p.Biblioteca.SetItem(indice, p.Biblioteca[indice] with { Caminho = Caminho }) };
     }
 }
-public sealed record InserirClipe(Guid MidiaId, int Indice, TempoMidia? DuracaoImagem = null) : IComandoEdicao
+public sealed record InserirClipe(Guid MidiaId, int Indice, TempoMidia? DuracaoImagem = null, LayoutVisual? Layout = null) : IComandoEdicao
 {
     public Projeto Aplicar(Projeto p)
     {
         var midia = p.Biblioteca.Single(a => a.Id == MidiaId);
         var duracao = midia.Duracao ?? DuracaoImagem ?? throw new ArgumentException("Informe a duração da imagem.");
-        var clipe = new Clipe(Guid.NewGuid(), midia.Id, midia.Nome, TempoMidia.Zero, duracao);
+        var clipe = new Clipe(Guid.NewGuid(), midia.Id, midia.Nome, TempoMidia.Zero, duracao, Layout: Layout);
         return p with { LinhaDoTempo = p.LinhaDoTempo.Insert(Indice, clipe), ItemSelecionadoId = clipe.Id };
     }
 }
-public sealed record AdicionarCamada(Guid MidiaId, TempoMidia Inicio, TempoMidia InicioNaOrigem, TempoMidia Duracao) : IComandoEdicao
+public sealed record AdicionarCamada(Guid MidiaId, TempoMidia Inicio, TempoMidia InicioNaOrigem, TempoMidia Duracao, LayoutVisual? Layout = null) : IComandoEdicao
 {
     public Projeto Aplicar(Projeto p)
     {
         var midia = p.Biblioteca.Single(a => a.Id == MidiaId);
-        var clipe = new Clipe(Guid.NewGuid(), midia.Id, midia.Nome, InicioNaOrigem, Duracao);
+        var clipe = new Clipe(Guid.NewGuid(), midia.Id, midia.Nome, InicioNaOrigem, Duracao, Layout: Layout);
         return p with { Camadas = p.Camadas.Add(new(clipe, Inicio)), ItemSelecionadoId = clipe.Id };
     }
 }

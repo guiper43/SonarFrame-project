@@ -8,12 +8,13 @@ namespace SonarFrame.Infrastructure;
 
 public sealed partial class PreparadorComposicaoFfmpeg
 {
-    private static Projeto Normalizar(Projeto projeto)
+    private static Projeto Normalizar(Projeto projeto, bool preservarLayoutNulo = false)
     {
         var clipes = ImmutableArray.CreateBuilder<Clipe>();
         foreach (var clipe in projeto.LinhaDoTempo)
         {
             if (clipes.Count > 0 && clipes[^1] is { } anterior && anterior.MidiaId == clipe.MidiaId && anterior.Volume == clipe.Volume
+                && (preservarLayoutNulo ? anterior.Layout == clipe.Layout : anterior.ObterLayout(false) == clipe.ObterLayout(false))
                 && anterior.InicioNaOrigem + anterior.Duracao == clipe.InicioNaOrigem)
                 clipes[^1] = anterior with { Duracao = anterior.Duracao + clipe.Duracao };
             else clipes.Add(clipe);
@@ -23,21 +24,22 @@ public sealed partial class PreparadorComposicaoFfmpeg
 
     private static string ChaveConteudo(Projeto projeto, bool? audio = null)
     {
+        if (audio == true) projeto = projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Layout = null })] };
         if (audio == false) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
-        object Conteudo(Clipe clipe)
+        object Conteudo(Clipe clipe, bool ehCamada)
         {
             var midia = projeto.Biblioteca.Single(m => m.Id == clipe.MidiaId);
             if (audio == false && midia.Tipo == TipoMidia.Audio || audio == true && midia.Tipo == TipoMidia.Imagem)
                 return new { clipe.Duracao };
             var arquivo = IdentificarMetadados(midia);
             return new { arquivo, Origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem,
-                clipe.Duracao, Volume = audio == false ? 100 : clipe.Volume };
+                clipe.Duracao, Volume = audio == false ? 100 : clipe.Volume, Layout = audio == true ? null : clipe.ObterLayout(ehCamada) };
         }
         return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            Perfil = 4, Audio = audio, Sequencia = Normalizar(projeto).LinhaDoTempo.Select(Conteudo),
+            Perfil = 4, Audio = audio, Sequencia = Normalizar(projeto).LinhaDoTempo.Select(c => Conteudo(c, false)),
             Camadas = projeto.Camadas.Where(c => audio is null || projeto.Biblioteca.Single(m => m.Id == c.Clipe.MidiaId).Tipo != (audio.Value ? TipoMidia.Imagem : TipoMidia.Audio))
-                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe) })
+                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe, true) })
         })));
     }
 

@@ -52,7 +52,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
         var filtros = new StringBuilder($"color=c=black:s={largura}x{altura}:r=1,format=rgba[base];");
         var entrada = 0;
         var visual = "base";
-        async Task AdicionarAsync(Clipe clipe, TempoMidia inicio)
+        async Task AdicionarAsync(Clipe clipe, TempoMidia inicio, bool ehCamada)
         {
             var midia = projeto.Biblioteca.Single(m => m.Id == clipe.MidiaId);
             var dados = metadados[midia.Id];
@@ -65,18 +65,20 @@ public sealed partial class PreparadorComposicaoFfmpeg
                 argumentos.AddRange(["-ss", Segundos(IndiceQuadros.BuscaParaQuadro(tempos, indice))]);
             }
             argumentos.AddRange(["-i", Path.GetFullPath(midia.Caminho)]);
-            filtros.Append($"[{entrada}:{dados.IndiceVideo}]trim=end_frame=1,setpts=0,{Escala(largura, altura, true)}[q{entrada}];");
-            filtros.Append($"[{visual}][q{entrada}]overlay=shortest=1:format=auto[s{entrada}];");
+            var filtroEscala = FiltroEscalaVisual(clipe, largura, altura, ehCamada, false);
+            var coordenadas = CoordenadasOverlayClipe(clipe, ehCamada);
+            filtros.Append($"[{entrada}:{dados.IndiceVideo}]trim=end_frame=1,setpts=0,{filtroEscala}[q{entrada}];");
+            filtros.Append($"[{visual}][q{entrada}]overlay={coordenadas}:shortest=1:format=auto[s{entrada}];");
             visual = $"s{entrada++}";
         }
         var inicio = TempoMidia.Zero;
         foreach (var clipe in projeto.LinhaDoTempo)
         {
-            if (instante < inicio + clipe.Duracao) { await AdicionarAsync(clipe, inicio).ConfigureAwait(false); break; }
+            if (instante < inicio + clipe.Duracao) { await AdicionarAsync(clipe, inicio, false).ConfigureAwait(false); break; }
             inicio += clipe.Duracao;
         }
         foreach (var camada in projeto.Camadas.Where(c => c.Inicio <= instante && instante < c.Inicio + c.Clipe.Duracao))
-            await AdicionarAsync(camada.Clipe, camada.Inicio).ConfigureAwait(false);
+            await AdicionarAsync(camada.Clipe, camada.Inicio, true).ConfigureAwait(false);
         filtros.Append($"[{visual}]format=rgb24[quadro]");
         argumentos.AddRange(["-filter_complex_threads", "1", "-filter_complex", filtros.ToString(), "-map", "[quadro]", "-frames:v", "1", "-an", "-threads", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1"]);
         var png = await DecodificarPngAsync(argumentos, token).ConfigureAwait(false);
