@@ -60,6 +60,7 @@ public partial class JanelaPrincipal : Window
         ConfigurarComposicao(preparadorComposicao);
         ConfigurarExportacao(exportador);
         ConfigurarCicloDeVida();
+        ConfigurarTimelineVisual();
         Loaded += (_, _) => BotaoNovo.Focus();
     }
     private FrameworkElement[] Regioes => [RegiaoBiblioteca, RegiaoPropriedades, RegiaoLinhaDoTempo, RegiaoPrevia, RegiaoComandos];
@@ -139,6 +140,7 @@ public partial class JanelaPrincipal : Window
         AtualizarControlesPrevia();
         AtualizarControlesExportacao();
         atualizando = false;
+        AtualizarTimelineVisual();
         if (exibirPropriedadesBiblioteca && Biblioteca.SelectedItem is Linha linhaBiblioteca) DescreverMidia(linhaBiblioteca.Id);
         else if (conteudoSelecionado is not null) DescreverConteudo(conteudoSelecionado);
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
