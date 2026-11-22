@@ -59,7 +59,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
         var metadados = await LerMetadadosAsync(Fontes(projeto), null, token);
         var (largura, altura) = DimensoesQuadro(projeto, metadados);
         var consulta = Stopwatch.StartNew();
-        var blocos = new List<(Projeto Projeto, string Video, string Audio)>();
+        var blocos = new List<(BlocoRecortado Bloco, string Video, string Audio)>();
         foreach (var (inicio, fim) in Segmentos(projeto))
         {
             token.ThrowIfCancellationRequested();
@@ -91,7 +91,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
                     var disponivel = LimiteBytes / 2 - TamanhoBlocos();
                     if (disponivel < 2 * 1024 * 1024) throw new IOException("O cache atingiu o limite de 2 GB. Reduza a composição para reproduzir.");
                     var renderizacao = Stopwatch.StartNew();
-                    try { await RenderizarBlocoAsync(bloco.Projeto, metadados, largura, altura, temporario, disponivel, audio, token); }
+                    try { await RenderizarBlocoAsync(bloco.Bloco.Projeto, metadados, largura, altura, temporario, disponivel, audio, token, cortes: bloco.Bloco.Cortes); }
                     finally
                     {
                         diagnostico.RenderizacaoComMixagemMs += renderizacao.Elapsed.TotalMilliseconds;
@@ -114,11 +114,11 @@ public sealed partial class PreparadorComposicaoFfmpeg
             var listaAudio = Path.Combine(pasta, "audios.txt");
             await File.WriteAllLinesAsync(lista, blocos.SelectMany(b => new[]
             {
-                $"file '{Path.GetFileName(b.Video)}'", $"duration {Segundos(b.Projeto.Duracao)}"
+                $"file '{Path.GetFileName(b.Video)}'", $"duration {Segundos(b.Bloco.Projeto.Duracao)}"
             }), token);
             await File.WriteAllLinesAsync(listaAudio, blocos.SelectMany(b => new[]
             {
-                $"file '{Path.GetFileName(b.Audio)}'", $"duration {Segundos(b.Projeto.Duracao)}"
+                $"file '{Path.GetFileName(b.Audio)}'", $"duration {Segundos(b.Bloco.Projeto.Duracao)}"
             }), token);
             var disponivelFinal = LimiteBytes - TamanhoBlocos() - 1024 * 1024;
             if (disponivelFinal < 1024 * 1024) throw new IOException("O cache não tem espaço para montar a prévia.");
@@ -151,13 +151,44 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
     }
 
-    private static Projeto RecortarBloco(Projeto projeto, TempoMidia inicio, TempoMidia fim)
+    private static BlocoRecortado RecortarBloco(Projeto projeto, TempoMidia inicio, TempoMidia fim)
     {
-        Clipe Recortar(Clipe clipe, TempoMidia posicao) => clipe with
+        var cortes = new Dictionary<Guid, CorteFade>();
+        static TempoMidia RecortarEntrada(TempoMidia fadeIn, TempoMidia corteInicio, TempoMidia duracao)
+            => fadeIn > corteInicio ? TempoMidia.Minimo(duracao, fadeIn - corteInicio) : TempoMidia.Zero;
+        static TempoMidia RecortarSaida(TempoMidia fadeOut, TempoMidia corteFim, TempoMidia duracao)
+            => fadeOut > corteFim ? TempoMidia.Minimo(duracao, fadeOut - corteFim) : TempoMidia.Zero;
+        Clipe Recortar(Clipe clipe, TempoMidia posicao)
         {
-            InicioNaOrigem = clipe.InicioNaOrigem + TempoMidia.Maximo(inicio - posicao, TempoMidia.Zero),
-            Duracao = TempoMidia.Minimo(posicao + clipe.Duracao, fim) - TempoMidia.Maximo(posicao, inicio)
-        };
+            var corteInicio = TempoMidia.Maximo(inicio - posicao, TempoMidia.Zero);
+            var corteFim = TempoMidia.Maximo(posicao + clipe.Duracao - fim, TempoMidia.Zero);
+            var duracao = TempoMidia.Minimo(posicao + clipe.Duracao, fim) - TempoMidia.Maximo(posicao, inicio);
+            var fadeInAudioAtivo = clipe.FadeInAudio > corteInicio;
+            var fadeOutAudioAtivo = clipe.FadeOutAudio > corteFim;
+            var fadeInVideoAtivo = clipe.FadeInVideo > corteInicio;
+            var fadeOutVideoAtivo = clipe.FadeOutVideo > corteFim;
+            if (fadeInAudioAtivo || fadeOutAudioAtivo || fadeInVideoAtivo || fadeOutVideoAtivo)
+            {
+                cortes[clipe.Id] = new(
+                    fadeInAudioAtivo ? clipe.FadeInAudio : TempoMidia.Zero,
+                    fadeInAudioAtivo ? corteInicio : TempoMidia.Zero,
+                    fadeOutAudioAtivo ? clipe.FadeOutAudio : TempoMidia.Zero,
+                    fadeOutAudioAtivo ? corteFim : TempoMidia.Zero,
+                    fadeInVideoAtivo ? clipe.FadeInVideo : TempoMidia.Zero,
+                    fadeInVideoAtivo ? corteInicio : TempoMidia.Zero,
+                    fadeOutVideoAtivo ? clipe.FadeOutVideo : TempoMidia.Zero,
+                    fadeOutVideoAtivo ? corteFim : TempoMidia.Zero);
+            }
+            return clipe with
+            {
+                InicioNaOrigem = clipe.InicioNaOrigem + corteInicio,
+                Duracao = duracao,
+                FadeInAudio = RecortarEntrada(clipe.FadeInAudio, corteInicio, duracao),
+                FadeOutAudio = RecortarSaida(clipe.FadeOutAudio, corteFim, duracao),
+                FadeInVideo = RecortarEntrada(clipe.FadeInVideo, corteInicio, duracao),
+                FadeOutVideo = RecortarSaida(clipe.FadeOutVideo, corteFim, duracao)
+            };
+        }
         var clipes = ImmutableArray.CreateBuilder<Clipe>();
         var posicao = TempoMidia.Zero;
         foreach (var clipe in projeto.LinhaDoTempo)
@@ -167,7 +198,13 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
         var camadas = projeto.Camadas.Where(c => c.Inicio < fim && c.Inicio + c.Clipe.Duracao > inicio)
             .Select(c => new CamadaTemporal(Recortar(c.Clipe, c.Inicio), TempoMidia.Maximo(c.Inicio - inicio, TempoMidia.Zero))).ToImmutableArray();
-        return projeto with { LinhaDoTempo = clipes.ToImmutable(), Camadas = camadas, Cursor = TempoMidia.Zero, Selecao = null, ItemSelecionadoId = null };
+        var legendas = projeto.Legendas.Where(l => l.Inicio < fim && l.Fim > inicio)
+            .Select(l => l with
+            {
+                Inicio = TempoMidia.Maximo(l.Inicio - inicio, TempoMidia.Zero),
+                Fim = TempoMidia.Minimo(l.Fim, fim) - inicio
+            }).ToImmutableArray();
+        return new(projeto with { LinhaDoTempo = clipes.ToImmutable(), Camadas = camadas, Legendas = legendas, Cursor = TempoMidia.Zero, Selecao = null, ItemSelecionadoId = null }, cortes);
     }
 
     private long TamanhoBlocos() => Directory.GetFiles(pasta, "bloco-*.nut").Sum(a => new FileInfo(a).Length);

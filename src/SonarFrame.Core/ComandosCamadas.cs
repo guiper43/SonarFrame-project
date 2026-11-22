@@ -9,8 +9,14 @@ public sealed record AtualizarCamada(Guid ClipeId, TempoMidia Inicio, TempoMidia
         var indice = p.Camadas.FindIndex(l => l.Clipe.Id == ClipeId);
         if (indice < 0) throw new ArgumentException("Camada não encontrada.");
         var camada = p.Camadas[indice];
-        return p with { Camadas = p.Camadas.SetItem(indice, camada with
-        { Inicio = Inicio, Clipe = camada.Clipe with { InicioNaOrigem = InicioNaOrigem, Duracao = Duracao, Layout = Layout ?? camada.Clipe.Layout } }) };
+        return p with
+        {
+            Camadas = p.Camadas.SetItem(indice, camada with
+            {
+                Inicio = Inicio,
+                Clipe = camada.Clipe.ComDuracao(Duracao) with { InicioNaOrigem = InicioNaOrigem, Layout = Layout ?? camada.Clipe.Layout }
+            })
+        };
     }
 }
 public sealed record DefinirLayoutVisual(Guid ClipeId, LayoutVisual? Layout, TempoMidia? Duracao = null) : IComandoEdicao
@@ -19,10 +25,11 @@ public sealed record DefinirLayoutVisual(Guid ClipeId, LayoutVisual? Layout, Tem
     {
         if (!p.LinhaDoTempo.Any(c => c.Id == ClipeId) && !p.Camadas.Any(l => l.Clipe.Id == ClipeId))
             throw new ArgumentException("Clipe não encontrado.");
+        Clipe Atualizar(Clipe clipe) => (Duracao is { } duracao ? clipe.ComDuracao(duracao) : clipe) with { Layout = Layout };
         var atualizado = p with
         {
-            LinhaDoTempo = p.LinhaDoTempo.Select(c => c.Id == ClipeId ? c with { Layout = Layout, Duracao = Duracao ?? c.Duracao } : c).ToImmutableArray(),
-            Camadas = p.Camadas.Select(l => l.Clipe.Id == ClipeId ? l with { Clipe = l.Clipe with { Layout = Layout, Duracao = Duracao ?? l.Clipe.Duracao } } : l).ToImmutableArray()
+            LinhaDoTempo = p.LinhaDoTempo.Select(c => c.Id == ClipeId ? Atualizar(c) : c).ToImmutableArray(),
+            Camadas = p.Camadas.Select(l => l.Clipe.Id == ClipeId ? l with { Clipe = Atualizar(l.Clipe) } : l).ToImmutableArray()
         };
         var duracaoTotal = atualizado.Duracao;
         var cursor = TempoMidia.Minimo(atualizado.Cursor, duracaoTotal);

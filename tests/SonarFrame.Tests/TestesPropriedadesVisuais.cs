@@ -101,6 +101,22 @@ public sealed class TestesPropriedadesVisuais
     }
 
     [Fact]
+    public void EncurtarImagemNasPropriedadesVisuaisAjustaFades()
+    {
+        var foto = new Midia(Guid.NewGuid(), "Foto", "foto.png", TipoMidia.Imagem, null);
+        var clipe = new Clipe(Guid.NewGuid(), foto.Id, foto.Nome, TempoMidia.Zero, TempoMidia.Segundos(6),
+            FadeInVideo: TempoMidia.Segundos(2), FadeOutVideo: TempoMidia.Segundos(3));
+        var projeto = (Projeto.Criar("Imagem com fades") with { Biblioteca = [foto], LinhaDoTempo = [clipe] }).Validar();
+        var layout = LayoutVisual.PadraoSequencia with { Ajuste = AjusteVisual.PreencherInteiro };
+
+        var resultado = new DefinirLayoutVisual(clipe.Id, layout, TempoMidia.Segundos(3)).Aplicar(projeto).Validar();
+        var alterado = Assert.Single(resultado.LinhaDoTempo);
+        Assert.Equal(layout, alterado.Layout);
+        Assert.Equal(TempoMidia.Segundos(2), alterado.FadeInVideo);
+        Assert.Equal(TempoMidia.Segundos(1), alterado.FadeOutVideo);
+    }
+
+    [Fact]
     public async Task PersistenciaSqlitePreservaPropriedadesVisuaisEComandosDesfazemERefazem()
     {
         var pasta = Path.Combine(Path.GetTempPath(), "sonarframe-prop-visuais-" + Guid.NewGuid().ToString("N"));

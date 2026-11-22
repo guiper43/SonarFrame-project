@@ -21,6 +21,8 @@ public sealed class DialogoImportacao : Window
     private bool conteudoExibido;
     private bool focoInicialAplicado;
     public bool ImportouAlgumaMidia { get; private set; }
+    public bool ImportouLegendas { get; private set; }
+    public Func<int, bool>? ConfirmarSubstituicaoLegendasOverride { get; set; }
 
     public DialogoImportacao(Window proprietario, SessaoEdicao sessao, ILeitorMetadadosMidia leitorMetadados)
     {
@@ -48,11 +50,11 @@ public sealed class DialogoImportacao : Window
                 e.Handled = true;
             }
         };
-        foreach (var (nome, descricao, filtro) in new[]
+        foreach (var (nome, descricao, filtro, ehLegenda) in new[]
         {
-            ("Fotos e vídeos", "Selecione fotos JPG/PNG ou vídeos MP4/MOV. Você pode selecionar vários arquivos.", "Fotos e vídeos|*.jpg;*.jpeg;*.png;*.mp4;*.mov"),
-            ("Áudios e músicas", "Selecione arquivos MP3, WAV, M4A ou OGG, incluindo áudio Opus.", "Áudios e músicas|*.mp3;*.wav;*.m4a;*.ogg"),
-            ("Legendas e efeitos", "A importação de legendas e a aplicação de efeitos estarão disponíveis em outra etapa.", "")
+            ("Fotos e vídeos", "Selecione fotos JPG/PNG ou vídeos MP4/MOV. Você pode selecionar vários arquivos.", "Fotos e vídeos|*.jpg;*.jpeg;*.png;*.mp4;*.mov", false),
+            ("Áudios e músicas", "Selecione arquivos MP3, WAV, M4A ou OGG, incluindo áudio Opus.", "Áudios e músicas|*.mp3;*.wav;*.m4a;*.ogg", false),
+            ("Legendas e efeitos", "Selecione um arquivo de legenda externa no formato SRT (.srt). Funciona sem chave de API.", "Legendas SRT|*.srt", true)
         })
         {
             var conteudo = new StackPanel { Margin = new Thickness(12) };
@@ -62,9 +64,10 @@ public sealed class DialogoImportacao : Window
                 var escolher = new Button { Content = "Selecionar _arquivos…", Margin = new Thickness(0, 12, 0, 0) };
                 escolher.Click += async (_, _) =>
                 {
-                    var dialogo = new OpenFileDialog { Multiselect = true, Filter = filtro, Title = nome, CheckFileExists = true };
+                    var dialogo = new OpenFileDialog { Multiselect = !ehLegenda, Filter = filtro, Title = nome, CheckFileExists = true };
                     if (dialogo.ShowDialog(this) != true) { escolher.Focus(); return; }
-                    await ImportarArquivosAsync(sessao, leitorMetadados, dialogo.FileNames);
+                    if (ehLegenda) await ImportarLegendaSrtAsync(sessao, dialogo.FileName);
+                    else await ImportarArquivosAsync(sessao, leitorMetadados, dialogo.FileNames);
                 };
                 conteudo.Children.Add(escolher);
             }
@@ -135,6 +138,96 @@ public sealed class DialogoImportacao : Window
             executando = false; cancelamento.Dispose(); cancelamento = null;
             guias.IsEnabled = true; fechar.Content = "Fechar"; fechar.Focus();
         }
+    }
+    internal async Task ImportarLegendaSrtAsync(SessaoEdicao sessao, string caminho)
+    {
+        if (sessao.Atual.Legendas.Length > 0)
+        {
+            var substituir = ConfirmarSubstituicaoLegendasOverride is { } overrideConfirmacao
+                ? overrideConfirmacao(sessao.Atual.Legendas.Length)
+                : ConfirmarSubstituicaoLegendas(sessao.Atual.Legendas.Length);
+            if (!substituir)
+            {
+                resultados.Items.Clear();
+                resultados.Items.Add("Substituição cancelada: as legendas atuais foram mantidas.");
+                Informar("Importação de legendas cancelada. As legendas atuais do projeto foram mantidas.");
+                fechar.Focus();
+                return;
+            }
+        }
+        executando = true; guias.IsEnabled = false; fechar.Content = "Cancelar importação";
+        cancelamento = new CancellationTokenSource();
+        fechar.Focus();
+        resultados.Items.Clear();
+        barraProgresso.Value = 0;
+        Informar("Importação de legendas SRT iniciada.");
+        try
+        {
+            var legendas = await LeitorSrt.CarregarAsync(caminho, cancelamento.Token);
+            sessao.Executar(new SonarFrame.Core.DefinirLegendas(legendas));
+            ImportouLegendas = true;
+            barraProgresso.Value = 100;
+            var nomeArquivo = System.IO.Path.GetFileName(caminho);
+            resultados.Items.Add($"Importado: {nomeArquivo} ({legendas.Length} legenda(s))");
+            Informar($"Importação concluída. {legendas.Length} legenda(s) aplicada(s) na linha do tempo.");
+        }
+        catch (OperationCanceledException)
+        {
+            Informar("Importação de legendas cancelada.");
+        }
+        catch (Exception ex)
+        {
+            var nomeArquivo = System.IO.Path.GetFileName(caminho);
+            resultados.Items.Add($"{nomeArquivo}: {ex.Message}");
+            sessao.Notificar(new("importacao.falhou", $"{caminho}: {ex.Message}", true));
+            Informar($"Não foi possível importar a legenda SRT: {ex.Message}");
+        }
+        finally
+        {
+            executando = false; cancelamento.Dispose(); cancelamento = null;
+            guias.IsEnabled = true; fechar.Content = "Fechar"; fechar.Focus();
+        }
+    }
+    internal (Window Dialogo, Button Substituir, Button Cancelar, Func<bool> Confirmou) CriarDialogoSubstituicaoLegendas(int quantidadeAtual)
+    {
+        var confirmado = false;
+        var painel = new StackPanel();
+        var mensagem = new TextBlock
+        {
+            Text = $"O projeto já possui {quantidadeAtual} legenda(s) aplicada(s). Deseja substituir as legendas atuais pelo novo arquivo SRT ou cancelar a operação?",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+        painel.Children.Add(mensagem);
+        var dialogo = new Window
+        {
+            Title = "Substituir legendas",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.Height,
+            Width = 520,
+            ResizeMode = ResizeMode.NoResize,
+            Content = new Border { Padding = new Thickness(24), Child = painel }
+        };
+        var substituir = new Button { Content = "_Substituir legendas", IsDefault = true };
+        var cancelar = new Button { Content = "Cancelar", IsCancel = true };
+        substituir.Click += (_, _) =>
+        {
+            confirmado = true;
+            if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) dialogo.DialogResult = true;
+            else dialogo.Close();
+        };
+        cancelar.Click += (_, _) => dialogo.Close();
+        painel.Children.Add(substituir);
+        painel.Children.Add(cancelar);
+        dialogo.Loaded += (_, _) => substituir.Focus();
+        return (dialogo, substituir, cancelar, () => confirmado);
+    }
+    private bool ConfirmarSubstituicaoLegendas(int quantidadeAtual)
+    {
+        var confirmacao = CriarDialogoSubstituicaoLegendas(quantidadeAtual);
+        confirmacao.Dialogo.ShowDialog();
+        return confirmacao.Confirmou();
     }
     private void Informar(string mensagem)
     {
