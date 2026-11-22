@@ -351,6 +351,7 @@ public partial class JanelaPrincipal
 
     private static void FocarOpcaoLista(ListBox lista)
     {
+        if (lista.SelectedItem is not null) lista.ScrollIntoView(lista.SelectedItem);
         lista.UpdateLayout();
         var janela = Window.GetWindow(lista);
         if (lista.SelectedItem is not null && lista.ItemContainerGenerator.ContainerFromItem(lista.SelectedItem) is ListBoxItem item)

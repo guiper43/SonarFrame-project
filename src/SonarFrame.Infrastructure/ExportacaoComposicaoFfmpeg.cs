@@ -44,7 +44,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
     {
         var relogio = Stopwatch.StartNew();
         progresso?.Report(new("Preparando a exportação", 0, null));
-        projeto = Normalizar(projeto);
+        projeto = Normalizar(projeto, preservarLayoutNulo: true);
         var chave = ChaveConteudo(projeto);
         PrepararPasta();
         var metadados = await LerMetadadosAsync(Fontes(projeto), null, token).ConfigureAwait(false);
