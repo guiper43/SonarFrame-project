@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using SonarFrame.Core;
 
 namespace SonarFrame.Application;
@@ -51,6 +52,14 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
     }
     public void RemoverFadesSelecionado()
         => DefinirFadesSelecionado(TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero, TempoMidia.Zero);
+    public Legenda? LegendaAtiva()
+        => sessao.Atual.Legendas.LastOrDefault(l => l.Inicio <= sessao.Atual.Cursor && sessao.Atual.Cursor < l.Fim);
+    public IReadOnlyList<Legenda> LegendasAtivas()
+        => sessao.Atual.Legendas.Where(l => l.Inicio <= sessao.Atual.Cursor && sessao.Atual.Cursor < l.Fim).ToArray();
+    public void DefinirLegendas(ImmutableArray<Legenda> legendas)
+        => sessao.Executar(new DefinirLegendas(legendas));
+    public void EditarLegenda(Guid legendaId, string texto, EstiloLegenda estilo, EscopoEstiloLegenda escopo)
+        => sessao.Executar(new EditarLegenda(legendaId, texto, estilo, escopo));
     public ItemComposicao Selecionado() => Conteudos().SingleOrDefault(c => c.Id == sessao.Atual.ItemSelecionadoId)
         ?? throw new InvalidOperationException("Selecione um conteúdo da composição.");
 

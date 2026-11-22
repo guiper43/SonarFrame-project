@@ -4,6 +4,42 @@ using System.Text.Json.Serialization;
 namespace SonarFrame.Core;
 
 public enum TipoMidia { Video, Audio, Imagem }
+public enum PosicaoVisual
+{
+    SuperiorEsquerda,
+    SuperiorCentro,
+    SuperiorDireita,
+    CentroEsquerda,
+    Centro,
+    CentroDireita,
+    InferiorEsquerda,
+    InferiorCentro,
+    InferiorDireita
+}
+public enum EscopoEstiloLegenda
+{
+    ApenasSelecionada,
+    TodasDoProjeto
+}
+public sealed record EstiloLegenda(
+    [property: JsonPropertyName("Font")] string Fonte = "Arial",
+    [property: JsonPropertyName("Size")] int Tamanho = 28,
+    [property: JsonPropertyName("Color")] string Cor = "#FFFFFF",
+    [property: JsonPropertyName("Bold")] bool Negrito = false,
+    [property: JsonPropertyName("Italic")] bool Italico = false,
+    [property: JsonPropertyName("Background")] bool Fundo = true,
+    [property: JsonPropertyName("Position")] PosicaoVisual Posicao = PosicaoVisual.InferiorCentro)
+{
+    public static EstiloLegenda Padrao { get; } = new();
+}
+public sealed record Legenda(Guid Id,
+    [property: JsonPropertyName("Start")] TempoMidia Inicio,
+    [property: JsonPropertyName("End")] TempoMidia Fim,
+    [property: JsonPropertyName("Text")] string Texto,
+    [property: JsonPropertyName("Style")] EstiloLegenda Estilo)
+{
+    [JsonIgnore] public TempoMidia Duracao => Fim - Inicio;
+}
 public sealed record Midia(Guid Id,
     [property: JsonPropertyName("Name")] string Nome,
     [property: JsonPropertyName("Path")] string Caminho,
@@ -34,14 +70,34 @@ public sealed record Projeto(Guid Id,
     [property: JsonPropertyName("Selection")] SelecaoTemporal? Selecao = null,
     [property: JsonPropertyName("SelectedItemId")] Guid? ItemSelecionadoId = null)
 {
+    private readonly ImmutableArray<Legenda> legendas = [];
+    [JsonIgnore]
+    public ImmutableArray<Legenda> Legendas
+    {
+        get => legendas.IsDefault ? [] : legendas;
+        init => legendas = value.IsDefault ? [] : value;
+    }
+    [JsonPropertyName("Subtitles"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<Legenda>? LegendasSerializadas
+    {
+        get => Legendas.IsDefaultOrEmpty ? null : Legendas;
+        init => Legendas = value is null || value.Value.IsDefault ? [] : value.Value;
+    }
     [JsonIgnore] public TempoMidia Duracao => LinhaDoTempo.Aggregate(TempoMidia.Zero, (t, c) => t + c.Duracao);
     public static Projeto Criar(string nome) => new Projeto(Guid.NewGuid(), nome, [], [], [], TempoMidia.Zero).Validar();
     public Projeto Validar()
     {
         if (Id == Guid.Empty || string.IsNullOrWhiteSpace(Nome)) throw new ArgumentException("Projeto sem identificação.");
         if (Biblioteca.IsDefault || LinhaDoTempo.IsDefault || Camadas.IsDefault) throw new ArgumentException("Coleções ausentes.");
-        if (Biblioteca.Any(a => a is null) || LinhaDoTempo.Any(c => c is null) || Camadas.Any(l => l is null || l.Clipe is null)) throw new ArgumentException("Elementos ausentes.");
+        if (Biblioteca.Any(a => a is null) || LinhaDoTempo.Any(c => c is null) || Camadas.Any(l => l is null || l.Clipe is null) || Legendas.Any(l => l is null)) throw new ArgumentException("Elementos ausentes.");
         if (Biblioteca.Select(a => a.Id).Distinct().Count() != Biblioteca.Length) throw new ArgumentException("Mídias duplicadas.");
+        if (Legendas.Select(l => l.Id).Distinct().Count() != Legendas.Length) throw new ArgumentException("Legendas duplicadas.");
+        static bool CorValida(string cor) => cor is { Length: 7 } && cor[0] == '#' && cor[1..].All(Uri.IsHexDigit);
+        foreach (var l in Legendas)
+        {
+            if (l.Id == Guid.Empty || string.IsNullOrWhiteSpace(l.Texto) || l.Inicio < TempoMidia.Zero || l.Fim <= l.Inicio || l.Estilo is null) throw new ArgumentException("Legenda inválida.");
+            if (string.IsNullOrWhiteSpace(l.Estilo.Fonte) || l.Estilo.Fonte.IndexOfAny(['\r', '\n']) >= 0 || l.Estilo.Tamanho is < 8 or > 120 || !Enum.IsDefined(l.Estilo.Posicao) || !CorValida(l.Estilo.Cor)) throw new ArgumentException("Estilo de legenda inválido.");
+        }
         foreach (var a in Biblioteca)
         {
             if (a.Id == Guid.Empty || string.IsNullOrWhiteSpace(a.Nome) || string.IsNullOrWhiteSpace(a.Caminho) || !Enum.IsDefined(a.Tipo)) throw new ArgumentException("Mídia inválida.");

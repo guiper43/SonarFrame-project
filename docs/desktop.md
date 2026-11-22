@@ -59,6 +59,8 @@ O arquivo `%LOCALAPPDATA%/sonarFrame/diagnostico-reproducao.json` registra a abe
 - **Excluir intervalo selecionado** remove a seleção temporal e fecha a lacuna. Camadas que cruzam o intervalo são recortadas, e as posteriores são deslocadas.
 - **Ajustar volume** nas propriedades altera o áudio do conteúdo selecionado entre 0 e 200%. Imagens não oferecem esse controle.
 - **Configurar fades** e **Remover fades** (em Propriedades ou no menu contextual da timeline) configuram durações independentes de *fade-in* e *fade-out* de áudio e vídeo conforme o tipo da mídia, exigindo que a soma `fade-in + fade-out` não ultrapasse a duração do conteúdo.
+- **Editar legenda** (no menu contextual `Shift+F10` da timeline ou em Propriedades, quando pausado sobre uma legenda ativa) abre um diálogo único com texto, fonte, tamanho, cor, negrito, itálico, fundo, 9 posições visuais (inferior centro por padrão) e escopo de aplicação (apenas a legenda atual ou todas as legendas do projeto), preservando a pausa, a posição temporal e retornando o foco à timeline.
+- Quando houver legendas simultâneas, **Editar legenda** primeiro apresenta a lista **Legendas ativas nesta posição**. Use Cima/Baixo para escolher e Enter para abrir a edição; Escape cancela a escolha, preservando a posição e retornando o foco à região de origem.
 - **Adicionar como camada** insere uma mídia da biblioteca em um intervalo independente. O diálogo permite definir início na composição, início na origem e duração. A camada precisa caber na composição e na mídia de origem.
 - **Editar intervalo da camada** e **Remover camada** atuam somente na camada selecionada e não encurtam a sequência principal.
 - Todas essas operações permitem desfazer/refazer. A lista identifica nome, tipo de mídia, ordem na lista, sequência principal ou camada, início, fim e duração. Mover para a posição atual não cria uma edição no histórico.
@@ -140,9 +142,9 @@ O arquivo é produzido na pasta escolhida e só substitui o destino após a veri
 
 ## Limites desta etapa
 
-- A guia **Legendas e efeitos** continua informativa. SRT e efeitos ainda não estão disponíveis.
-- Prévia da biblioteca, reprodução da composição com camadas e exportação em MP4 disponíveis; exportação em 4K permanece fora desta versão.
-- FFprobe lê metadados, FFmpeg prepara a prévia temporária da composição e exporta o arquivo MP4 final, e LibVLCSharp reproduz o arquivo original ou a prévia preparada. Não há edição visual de legendas, efeitos ou serviços de IA.
+- A guia **Legendas e efeitos** importa arquivos externos `.srt` (funcionando offline, sem chave de API) e pergunta se deseja substituir ou cancelar quando o projeto já possui legendas; geração de legendas por IA e transições visuais ainda não estão disponíveis.
+- Prévia da biblioteca, reprodução da composição com camadas, fades, legendas `.srt` e exportação em MP4 disponíveis; exportação em 4K permanece fora desta versão.
+- FFprobe lê metadados, FFmpeg prepara a prévia temporária da composição e exporta o arquivo MP4 final, e LibVLCSharp reproduz o arquivo original ou a prévia preparada. Não há serviços de IA nesta versão.
 - Na composição, Esquerda/Direita usa os timestamps reais dos vídeos, inclusive VFR e taxas acima de 30 fps. Imagens e áudios usam passos de 1/30 s; Ctrl+setas e Page Up/Down continuam disponíveis. A primeira consulta pode precisar ler o índice de quadros; use Cancelar preparação ou busca para interromper.
 - A validação real com NVDA continua pendente. Controles nativos, nomes UI Automation e notificações são a base, não uma certificação de acessibilidade.
 

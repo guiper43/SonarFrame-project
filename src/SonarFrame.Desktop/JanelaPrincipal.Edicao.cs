@@ -15,6 +15,7 @@ public partial class JanelaPrincipal
 {
     internal Task UltimaEdicao { get; private set; } = Task.CompletedTask;
     private bool editandoFades;
+    private bool editandoLegenda;
     internal sealed record DialogoConfiguracaoFades(
         Window Dialogo,
         TextBox? FadeInAudio,
@@ -24,7 +25,23 @@ public partial class JanelaPrincipal
         TextBlock Erro,
         Button Confirmar,
         Func<(TempoMidia FadeInAudio, TempoMidia FadeOutAudio, TempoMidia FadeInVideo, TempoMidia FadeOutVideo)?> ObterResultado);
+    internal sealed record DialogoEdicaoLegenda(
+        Window Dialogo,
+        TextBox Texto,
+        ComboBox Fonte,
+        TextBox Tamanho,
+        ComboBox Cor,
+        CheckBox Negrito,
+        CheckBox Italico,
+        CheckBox Fundo,
+        ComboBox Posicao,
+        ComboBox Escopo,
+        TextBlock Erro,
+        Button Confirmar,
+        Func<(string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)?> ObterResultado);
     internal Func<ItemComposicao, TipoMidia, (TempoMidia FadeInAudio, TempoMidia FadeOutAudio, TempoMidia FadeInVideo, TempoMidia FadeOutVideo)?>? SolicitarFadesOverride { get; set; }
+    internal Func<Legenda, (string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)?>? SolicitarEdicaoLegendaOverride { get; set; }
+    internal Func<IReadOnlyList<Legenda>, Legenda?>? SolicitarLegendaAtivaOverride { get; set; }
     private void DescreverMidia(Guid id)
     {
         if (sessao is null) return;
@@ -50,6 +67,8 @@ public partial class JanelaPrincipal
                 ? $"\nFades de vídeo: fade-in {item.FadeInVideo}, fade-out {item.FadeOutVideo}"
                 : "\nFades de vídeo: nenhum";
         }
+        if (new AcoesEdicao(sessao).LegendaAtiva() is { } legenda)
+            texto += $"\nLegenda ativa ({legenda.Inicio} até {legenda.Fim}): {legenda.Texto.Replace('\n', ' ')}";
         Propriedades.Text = texto;
     }
     private async Task AplicarAcaoAsync(Action<AcoesEdicao> acao, string mensagem)
@@ -242,6 +261,239 @@ public partial class JanelaPrincipal
         var primeiroCampo = fadeInAudio?.Caixa ?? fadeInVideo!.Value.Caixa;
         dialogo.Loaded += (_, _) => { primeiroCampo.Focus(); primeiroCampo.SelectAll(); };
         return new(dialogo, fadeInAudio?.Caixa, fadeOutAudio?.Caixa, fadeInVideo?.Caixa, fadeOutVideo?.Caixa, erro, confirmar, () => resultado);
+    }
+    private void EditarLegendaPropriedades(object sender, RoutedEventArgs e) => UltimaEdicao = EditarLegendaAsync(BotaoEditarLegenda);
+    private void EditarLegendaMenu(object sender, RoutedEventArgs e) => UltimaEdicao = EditarLegendaAsync(LinhaDoTempo);
+    internal async Task EditarLegendaAsync(UIElement destinoFoco)
+    {
+        if (sessao is null || Ocupado || editandoLegenda) return;
+        editandoLegenda = true;
+        try
+        {
+            var tinhaComposicao = composicaoAtiva && !sessao.Atual.LinhaDoTempo.IsEmpty;
+            if (!await PrepararEdicaoAsync()) return;
+            var cursorAnterior = sessao.Atual.Cursor;
+            var legendas = new AcoesEdicao(sessao).LegendasAtivas();
+            if (legendas.Count == 0)
+            {
+                Anunciar("Posicione o cursor sobre um trecho com legenda ativa e mantenha a prévia pausada para editar a legenda.");
+                return;
+            }
+            var legenda = legendas.Count == 1 ? legendas[0]
+                : SolicitarLegendaAtivaOverride is { } escolherLegenda ? escolherLegenda(legendas) : SolicitarLegendaAtiva(legendas);
+            var edicao = legenda is null ? null : SolicitarEdicaoLegendaOverride is { } overrideLegenda
+                ? overrideLegenda(legenda)
+                : SolicitarEdicaoLegenda(legenda);
+            if (edicao is { } dados && legenda is not null)
+            {
+                var escopoTexto = dados.Escopo == EscopoEstiloLegenda.TodasDoProjeto ? "estilo aplicado a todas as legendas do projeto" : "estilo aplicado à legenda atual";
+                await AplicarAcaoAsync(a => a.EditarLegenda(legenda.Id, dados.Texto, dados.Estilo, dados.Escopo),
+                    $"Legenda atualizada ({escopoTexto}). Posição {cursorAnterior} preservada.");
+                if (sessao.Atual.Cursor != cursorAnterior) sessao.Posicionar(cursorAnterior);
+                Atualizar();
+            }
+            else Anunciar($"Edição de legenda cancelada. Posição {cursorAnterior} preservada.");
+            if (tinhaComposicao && !sessao.Atual.LinhaDoTempo.IsEmpty)
+            {
+                composicaoAtiva = true;
+                destinoManualComposicao = sessao.Atual.Cursor;
+                UltimoQuadro = ExibirQuadroAsync(sessao.Atual.Cursor);
+                await UltimoQuadro;
+                AtualizarPosicaoPrevia();
+            }
+        }
+        finally
+        {
+            editandoLegenda = false;
+            if (ReferenceEquals(destinoFoco, LinhaDoTempo)) FocarConteudoSelecionado();
+            else RestaurarFocoAposDialogo(destinoFoco, LinhaDoTempo);
+        }
+    }
+    private Legenda? SolicitarLegendaAtiva(IReadOnlyList<Legenda> legendas)
+    {
+        var escolha = CriarDialogoEscolhaLegenda(legendas);
+        escolha.Dialogo.ShowDialog();
+        return escolha.ObterResultado();
+    }
+    internal (Window Dialogo, ListBox Lista, Button Confirmar, Func<Legenda?> ObterResultado) CriarDialogoEscolhaLegenda(IReadOnlyList<Legenda> legendas)
+    {
+        Legenda? resultado = null;
+        var painel = new StackPanel();
+        var lista = new ListBox
+        {
+            ItemsSource = legendas.Select((l, i) => $"Legenda {i + 1}: {l.Texto.Replace('\n', ' ')}. De {l.Inicio} até {l.Fim}.").ToArray(),
+            SelectedIndex = 0,
+            MaxHeight = 180,
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "_Legendas ativas nesta posição", Target = lista });
+        AutomationProperties.SetName(lista, "Legendas ativas nesta posição");
+        AutomationProperties.SetHelpText(lista, "Use Cima e Baixo para escolher a legenda e Enter para editar.");
+        painel.Children.Add(lista);
+        var dialogo = CriarDialogo("Escolher legenda para editar", painel);
+        var confirmar = new Button { Content = "_Editar legenda", IsDefault = true };
+        confirmar.Click += (_, _) =>
+        {
+            if (lista.SelectedIndex < 0) return;
+            resultado = legendas[lista.SelectedIndex];
+            if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) dialogo.DialogResult = true;
+            else dialogo.Close();
+        };
+        painel.Children.Add(confirmar);
+        AdicionarFechar(dialogo, painel, "Cancelar");
+        dialogo.Loaded += (_, _) =>
+        {
+            lista.UpdateLayout();
+            if (lista.ItemContainerGenerator.ContainerFromIndex(lista.SelectedIndex) is ListBoxItem item) item.Focus();
+            else lista.Focus();
+        };
+        return (dialogo, lista, confirmar, () => resultado);
+    }
+    private (string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)? SolicitarEdicaoLegenda(Legenda legenda)
+    {
+        var dialogo = CriarDialogoLegenda(legenda);
+        dialogo.Dialogo.ShowDialog();
+        return dialogo.ObterResultado();
+    }
+    internal DialogoEdicaoLegenda CriarDialogoLegenda(Legenda legenda)
+    {
+        (string Texto, EstiloLegenda Estilo, EscopoEstiloLegenda Escopo)? resultado = null;
+        var painel = new StackPanel();
+        painel.Children.Add(new TextBlock
+        {
+            Text = $"Intervalo da legenda: {legenda.Inicio} até {legenda.Fim}.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8)
+        });
+        var caixaTexto = new TextBox
+        {
+            Text = legenda.Texto,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "_Texto da legenda", Target = caixaTexto });
+        AutomationProperties.SetName(caixaTexto, "Texto da legenda");
+        painel.Children.Add(caixaTexto);
+
+        var fontes = new List<string> { "Arial", "Segoe UI", "Verdana", "Tahoma", "Times New Roman", "Courier New", "Consolas" };
+        if (!fontes.Contains(legenda.Estilo.Fonte, StringComparer.OrdinalIgnoreCase)) fontes.Insert(0, legenda.Estilo.Fonte);
+        var comboFonte = new ComboBox { ItemsSource = fontes, SelectedItem = fontes.First(f => string.Equals(f, legenda.Estilo.Fonte, StringComparison.OrdinalIgnoreCase)), Margin = new Thickness(0, 4, 0, 12) };
+        painel.Children.Add(new Label { Content = "_Fonte", Target = comboFonte });
+        AutomationProperties.SetName(comboFonte, "Fonte da legenda");
+        painel.Children.Add(comboFonte);
+
+        var caixaTamanho = new TextBox { Text = legenda.Estilo.Tamanho.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(0, 4, 0, 12) };
+        painel.Children.Add(new Label { Content = "Ta_manho da fonte (8 a 120)", Target = caixaTamanho });
+        AutomationProperties.SetName(caixaTamanho, "Tamanho da fonte, entre 8 e 120");
+        painel.Children.Add(caixaTamanho);
+
+        var cores = new List<(string Nome, string Hex)>
+        {
+            ("Branco (#FFFFFF)", "#FFFFFF"),
+            ("Amarelo (#FFFF00)", "#FFFF00"),
+            ("Ciano (#00FFFF)", "#00FFFF"),
+            ("Verde (#00FF00)", "#00FF00"),
+            ("Preto (#000000)", "#000000")
+        };
+        if (!cores.Any(c => string.Equals(c.Hex, legenda.Estilo.Cor, StringComparison.OrdinalIgnoreCase)))
+            cores.Insert(0, ($"Personalizada ({legenda.Estilo.Cor.ToUpperInvariant()})", legenda.Estilo.Cor.ToUpperInvariant()));
+        var comboCor = new ComboBox
+        {
+            ItemsSource = cores.Select(c => c.Nome).ToArray(),
+            SelectedIndex = Math.Max(0, cores.FindIndex(c => string.Equals(c.Hex, legenda.Estilo.Cor, StringComparison.OrdinalIgnoreCase))),
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "_Cor do texto", Target = comboCor });
+        AutomationProperties.SetName(comboCor, "Cor do texto da legenda");
+        painel.Children.Add(comboCor);
+
+        var checkNegrito = new CheckBox { Content = "_Negrito", IsChecked = legenda.Estilo.Negrito, Margin = new Thickness(0, 0, 16, 8) };
+        AutomationProperties.SetName(checkNegrito, "Negrito");
+        var checkItalico = new CheckBox { Content = "_Itálico", IsChecked = legenda.Estilo.Italico, Margin = new Thickness(0, 0, 16, 8) };
+        AutomationProperties.SetName(checkItalico, "Itálico");
+        var checkFundo = new CheckBox { Content = "Exibir _fundo na legenda", IsChecked = legenda.Estilo.Fundo, Margin = new Thickness(0, 0, 0, 12) };
+        AutomationProperties.SetName(checkFundo, "Exibir fundo na legenda");
+        painel.Children.Add(checkNegrito);
+        painel.Children.Add(checkItalico);
+        painel.Children.Add(checkFundo);
+
+        var posicoes = new (PosicaoVisual Valor, string Rotulo)[]
+        {
+            (PosicaoVisual.SuperiorEsquerda, "Superior esquerda"),
+            (PosicaoVisual.SuperiorCentro, "Superior centro"),
+            (PosicaoVisual.SuperiorDireita, "Superior direita"),
+            (PosicaoVisual.CentroEsquerda, "Centro esquerda"),
+            (PosicaoVisual.Centro, "Centro"),
+            (PosicaoVisual.CentroDireita, "Centro direita"),
+            (PosicaoVisual.InferiorEsquerda, "Inferior esquerda"),
+            (PosicaoVisual.InferiorCentro, "Inferior centro (padrão)"),
+            (PosicaoVisual.InferiorDireita, "Inferior direita")
+        };
+        var comboPosicao = new ComboBox
+        {
+            ItemsSource = posicoes.Select(p => p.Rotulo).ToArray(),
+            SelectedIndex = Math.Max(0, Array.FindIndex(posicoes, p => p.Valor == legenda.Estilo.Posicao)),
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "_Posicionamento visual", Target = comboPosicao });
+        AutomationProperties.SetName(comboPosicao, "Posicionamento visual da legenda");
+        painel.Children.Add(comboPosicao);
+
+        var escopos = new (EscopoEstiloLegenda Valor, string Rotulo)[]
+        {
+            (EscopoEstiloLegenda.ApenasSelecionada, "Apenas esta legenda"),
+            (EscopoEstiloLegenda.TodasDoProjeto, "Todas as legendas do projeto")
+        };
+        var comboEscopo = new ComboBox
+        {
+            ItemsSource = escopos.Select(e => e.Rotulo).ToArray(),
+            SelectedIndex = 0,
+            Margin = new Thickness(0, 4, 0, 12)
+        };
+        painel.Children.Add(new Label { Content = "Aplicar formatação _visual a", Target = comboEscopo });
+        AutomationProperties.SetName(comboEscopo, "Aplicar formatação visual a");
+        painel.Children.Add(comboEscopo);
+
+        var erro = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+        AutomationProperties.SetLiveSetting(erro, AutomationLiveSetting.Assertive);
+        painel.Children.Add(erro);
+
+        var dialogo = CriarDialogo("Editar legenda", painel);
+        var confirmar = new Button { Content = "Aplicar", IsDefault = true };
+        void InformarErro(string mensagem, TextBox destino)
+        {
+            erro.Text = mensagem;
+            (UIElementAutomationPeer.FromElement(erro) ?? UIElementAutomationPeer.CreatePeerForElement(erro))
+                ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+            destino.Focus();
+            destino.SelectAll();
+        }
+        confirmar.Click += (_, _) =>
+        {
+            var texto = caixaTexto.Text.Trim();
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                InformarErro("Informe o texto da legenda.", caixaTexto);
+                return;
+            }
+            if (!int.TryParse(caixaTamanho.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var tamanho) || tamanho is < 8 or > 120)
+            {
+                InformarErro("Tamanho da fonte: informe um número inteiro entre 8 e 120.", caixaTamanho);
+                return;
+            }
+            var fonte = comboFonte.SelectedItem as string ?? "Arial";
+            var cor = cores[Math.Clamp(comboCor.SelectedIndex, 0, cores.Count - 1)].Hex;
+            var posicao = posicoes[Math.Clamp(comboPosicao.SelectedIndex, 0, posicoes.Length - 1)].Valor;
+            var escopo = escopos[Math.Clamp(comboEscopo.SelectedIndex, 0, escopos.Length - 1)].Valor;
+            var estilo = new EstiloLegenda(fonte, tamanho, cor, checkNegrito.IsChecked == true, checkItalico.IsChecked == true, checkFundo.IsChecked == true, posicao);
+            resultado = (texto, estilo, escopo);
+            if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) dialogo.DialogResult = true;
+            else dialogo.Close();
+        };
+        painel.Children.Add(confirmar);
+        AdicionarFechar(dialogo, painel, "Cancelar");
+        dialogo.Loaded += (_, _) => { caixaTexto.Focus(); caixaTexto.SelectAll(); };
+        return new(dialogo, caixaTexto, comboFonte, caixaTamanho, comboCor, checkNegrito, checkItalico, checkFundo, comboPosicao, comboEscopo, erro, confirmar, () => resultado);
     }
     private static decimal Segundos(TempoMidia tempo) => (decimal)tempo.Numerador / tempo.Denominador;
     private static TempoMidia Tempo(decimal segundos) => new((long)decimal.Round(segundos * 1_000_000), 1_000_000);

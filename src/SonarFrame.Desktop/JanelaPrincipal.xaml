@@ -72,6 +72,7 @@
         <Button x:Name="BotaoVolume" Content="Ajustar volume…" Click="AlterarVolume" IsEnabled="False"/>
         <Button x:Name="BotaoFades" Content="Configurar fades…" Click="ConfigurarFades" IsEnabled="False"/>
         <Button x:Name="BotaoRemoverFades" Content="Remover fades" Click="RemoverFades" IsEnabled="False"/>
+        <Button x:Name="BotaoEditarLegenda" Content="Editar legenda…" Click="EditarLegendaPropriedades" IsEnabled="False"/>
         <Button x:Name="BotaoEditarCamada" Content="Editar intervalo da camada…" Click="EditarCamada" IsEnabled="False"/>
         <Button x:Name="BotaoRemoverCamada" Content="Remover camada" Click="ExcluirCamada" IsEnabled="False"/>
        </StackPanel>
@@ -89,6 +90,7 @@
           <MenuItem x:Name="MenuExcluirSelecao" Header="Excluir intervalo selecionado" Click="ExcluirIntervaloSelecionado"/>
           <MenuItem x:Name="MenuConfigurarFades" Header="Configurar fades…" Click="ConfigurarFadesMenu"/>
           <MenuItem x:Name="MenuRemoverFades" Header="Remover fades" Click="RemoverFadesMenu"/>
+          <MenuItem x:Name="MenuEditarLegenda" Header="Editar legenda…" Click="EditarLegendaMenu"/>
           <MenuItem x:Name="MenuRemoverComposicao" Header="Remover vídeo da composição" Click="RemoverDaComposicao"/>
           <Separator/>
           <MenuItem x:Name="MenuMoverInicio" Header="Mover para o início" Click="MoverParaInicio"/>

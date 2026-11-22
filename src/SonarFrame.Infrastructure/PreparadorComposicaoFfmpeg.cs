@@ -165,18 +165,42 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
                 audios.Add($"ca{camadaIndice}");
             }
         }
-        filtrosVideo.Append($"[{visualAtual}]format=yuv420p[v];");
-        foreach (var audio in audios) filtrosAudio.Append($"[{audio}]");
-        filtrosAudio.Append($"amix=inputs={audios.Count}:duration=first:normalize=0:dropout_transition=0,atrim=duration={Segundos(projeto.Duracao)}[a]");
-        var script = Path.Combine(pasta, "filtros.txt");
-        var filtros = perfil.Exportacao ? filtrosVideo.ToString() + filtrosAudio : (somenteAudio ? filtrosAudio : filtrosVideo).ToString();
-        await File.WriteAllTextAsync(script, filtros.TrimEnd(';'), token);
-        if (perfil.Threads > 0) argumentos.AddRange(["-filter_complex_threads", "1"]);
-        argumentos.AddRange(["-/filter_complex", script, "-map", somenteAudio ? "[a]" : "[v]", "-c:v", "libx264"]);
-        if (perfil.Exportacao) argumentos.AddRange(["-map", "[a]", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:2", "-nostats"]);
-        if (perfil.Threads > 0) argumentos.AddRange(["-threads", perfil.Threads.ToString(CultureInfo.InvariantCulture)]);
-        argumentos.AddRange(["-preset", perfil.Preset, "-crf", perfil.Crf.ToString(CultureInfo.InvariantCulture), "-c:a", perfil.Exportacao ? "aac" : "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
-        await ExecutarAsync(argumentos, token, perfil.Exportacao, progresso);
+        string? arquivoAss = null;
+        var legendasVisiveis = !somenteAudio
+            ? projeto.Legendas.Where(l => l.Inicio < projeto.Duracao && l.Fim > TempoMidia.Zero)
+                .Select(l => l with
+                {
+                    Inicio = TempoMidia.Maximo(l.Inicio, TempoMidia.Zero),
+                    Fim = TempoMidia.Minimo(l.Fim, projeto.Duracao)
+                }).ToArray()
+            : [];
+        try
+        {
+            if (legendasVisiveis.Length > 0)
+            {
+                PrepararPasta();
+                arquivoAss = Path.Combine(pasta, $"legendas-{Guid.NewGuid():N}.ass");
+                await EscreverAssAsync(arquivoAss, legendasVisiveis, larguraQuadro, alturaQuadro, token);
+                filtrosVideo.Append($"[{visualAtual}]{FiltroAss(arquivoAss)}[vleg];");
+                visualAtual = "vleg";
+            }
+            filtrosVideo.Append($"[{visualAtual}]format=yuv420p[v];");
+            foreach (var audio in audios) filtrosAudio.Append($"[{audio}]");
+            filtrosAudio.Append($"amix=inputs={audios.Count}:duration=first:normalize=0:dropout_transition=0,atrim=duration={Segundos(projeto.Duracao)}[a]");
+            var script = Path.Combine(pasta, "filtros.txt");
+            var filtros = perfil.Exportacao ? filtrosVideo.ToString() + filtrosAudio : (somenteAudio ? filtrosAudio : filtrosVideo).ToString();
+            await File.WriteAllTextAsync(script, filtros.TrimEnd(';'), token);
+            if (perfil.Threads > 0) argumentos.AddRange(["-filter_complex_threads", "1"]);
+            argumentos.AddRange(["-/filter_complex", script, "-map", somenteAudio ? "[a]" : "[v]", "-c:v", "libx264"]);
+            if (perfil.Exportacao) argumentos.AddRange(["-map", "[a]", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:2", "-nostats"]);
+            if (perfil.Threads > 0) argumentos.AddRange(["-threads", perfil.Threads.ToString(CultureInfo.InvariantCulture)]);
+            argumentos.AddRange(["-preset", perfil.Preset, "-crf", perfil.Crf.ToString(CultureInfo.InvariantCulture), "-c:a", perfil.Exportacao ? "aac" : "pcm_f32le", "-t", Segundos(projeto.Duracao), "-fs", disponivel.ToString(CultureInfo.InvariantCulture), destino]);
+            await ExecutarAsync(argumentos, token, perfil.Exportacao, progresso);
+        }
+        finally
+        {
+            if (arquivoAss is not null) File.Delete(arquivoAss);
+        }
         if (new FileInfo(destino).Length >= disponivel - 1024 * 1024)
             throw new IOException(perfil.Exportacao ? "Sem espaço em disco para exportar. Libere espaço e tente novamente." : "A preparação excedeu o limite de cache. Reduza a composição para reproduzir.");
     }
@@ -243,9 +267,92 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
 
     private static string Segundos(TempoMidia tempo) => ((decimal)tempo.Numerador / tempo.Denominador).ToString("0.#########", CultureInfo.InvariantCulture);
 
+    private static string FiltroAss(string caminhoAss)
+    {
+        var escapado = Path.GetFullPath(caminhoAss)
+            .Replace("\\", "/", StringComparison.Ordinal)
+            .Replace(":", "\\:", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
+        return $"ass=filename='{escapado}'";
+    }
+
+    private static Task EscreverAssAsync(string caminhoAss, IReadOnlyList<Legenda> legendas, int larguraQuadro, int alturaQuadro, CancellationToken token)
+    {
+        static string TempoAss(TempoMidia t)
+        {
+            var centesimosTotais = (long)decimal.Round((decimal)t.Numerador * 100 / t.Denominador, MidpointRounding.AwayFromZero);
+            var horas = centesimosTotais / 360000;
+            var minutos = (centesimosTotais / 6000) % 60;
+            var segundos = (centesimosTotais / 100) % 60;
+            var centesimos = centesimosTotais % 100;
+            return string.Create(CultureInfo.InvariantCulture, $"{horas}:{minutos:00}:{segundos:00}.{centesimos:00}");
+        }
+        var sb = new StringBuilder();
+        sb.AppendLine("[Script Info]");
+        sb.AppendLine("ScriptType: v4.00+");
+        sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"PlayResX: {larguraQuadro}"));
+        sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"PlayResY: {alturaQuadro}"));
+        sb.AppendLine("WrapStyle: 0");
+        sb.AppendLine("ScaledBorderAndShadow: yes");
+        sb.AppendLine();
+        sb.AppendLine("[V4+ Styles]");
+        sb.AppendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
+        for (var i = 0; i < legendas.Count; i++)
+        {
+            var estilo = legendas[i].Estilo;
+            var fonte = estilo.Fonte.Replace(',', ' ').Replace('\r', ' ').Replace('\n', ' ');
+            var escala = Math.Max(0.4, alturaQuadro / 720.0);
+            var tamanho = Math.Max(10, (int)Math.Round(estilo.Tamanho * escala * 1.4));
+            var r = estilo.Cor[1..3].ToUpperInvariant();
+            var g = estilo.Cor[3..5].ToUpperInvariant();
+            var b = estilo.Cor[5..7].ToUpperInvariant();
+            var corPrimaria = $"&H00{b}{g}{r}";
+            var corFundo = estilo.Fundo ? "&H40000000" : "&H00000000";
+            var borderStyle = estilo.Fundo ? 3 : 1;
+            var outline = Math.Max(1, (int)Math.Round((estilo.Fundo ? 6 : 2) * escala));
+            var shadow = estilo.Fundo ? 0 : Math.Max(1, (int)Math.Round(2 * escala));
+            var alinhamento = estilo.Posicao switch
+            {
+                PosicaoVisual.InferiorEsquerda => 1,
+                PosicaoVisual.InferiorCentro => 2,
+                PosicaoVisual.InferiorDireita => 3,
+                PosicaoVisual.CentroEsquerda => 4,
+                PosicaoVisual.Centro => 5,
+                PosicaoVisual.CentroDireita => 6,
+                PosicaoVisual.SuperiorEsquerda => 7,
+                PosicaoVisual.SuperiorCentro => 8,
+                PosicaoVisual.SuperiorDireita => 9,
+                _ => 2
+            };
+            var margem = Math.Max(8, (int)Math.Round(24 * escala));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"Style: S{i},{fonte},{tamanho},{corPrimaria},{corPrimaria},{corFundo},{corFundo},{(estilo.Negrito ? -1 : 0)},{(estilo.Italico ? -1 : 0)},0,0,100,100,0,0,{borderStyle},{outline},{shadow},{alinhamento},{margem},{margem},{margem},1"));
+        }
+        sb.AppendLine();
+        sb.AppendLine("[Events]");
+        sb.AppendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text");
+        for (var i = 0; i < legendas.Count; i++)
+        {
+            var legenda = legendas[i];
+            var texto = legenda.Texto
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Replace("\\N", "\\\u200BN", StringComparison.Ordinal)
+                .Replace("\\n", "\\\u200Bn", StringComparison.Ordinal)
+                .Replace("\\h", "\\\u200Bh", StringComparison.Ordinal)
+                .Replace("{", "\\{", StringComparison.Ordinal)
+                .Replace("}", "\\}", StringComparison.Ordinal)
+                .Replace("\n", "\\N", StringComparison.Ordinal);
+            sb.AppendLine($"Dialogue: 0,{TempoAss(legenda.Inicio)},{TempoAss(legenda.Fim)},S{i},,0,0,0,,{texto}");
+        }
+        return File.WriteAllTextAsync(caminhoAss, sb.ToString(), Encoding.UTF8, token);
+    }
+
     private void PrepararPasta()
     {
-        if (usoCache is not null) return;
+        lock (cacheMetadados)
+        {
+            if (usoCache is not null) return;
         var raiz = Path.GetFullPath(Path.GetDirectoryName(pasta)!);
         Directory.CreateDirectory(raiz);
         foreach (var diretorio in Directory.GetDirectories(raiz))
@@ -266,8 +373,9 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        Directory.CreateDirectory(pasta);
-        usoCache = new FileStream(Path.Combine(pasta, "em-uso"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            Directory.CreateDirectory(pasta);
+            usoCache = new FileStream(Path.Combine(pasta, "em-uso"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        }
     }
 
     private async Task ExecutarAsync(IEnumerable<string> argumentos, CancellationToken token, bool exportacao = false, Action<TempoMidia>? progresso = null)
