@@ -43,7 +43,9 @@ jobs:
           include-hidden-files: true
           path: |
             .tools/releases/**/*.zip
+            .tools/releases/**/*-setup.exe
             .tools/releases/**/*.nupkg
             .tools/releases/**/SHA256SUMS.txt
             .tools/releases/**/CHANGELOG.md
+            .tools/releases/**/instalador.md
             .tools/releases/**/release.md

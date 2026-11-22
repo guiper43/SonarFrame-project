@@ -31,8 +31,9 @@ No Windows, com SDK .NET 10:
 O script prepara as ferramentas de mídia, compila, executa os testes, gera os pacotes NuGet e publica uma distribuição Windows x64 com runtime incluído. Os resultados ficam em `.tools/releases/0.1.0`; o executável para validação fica somente em `artifacts/desktop`:
 
 - `sonarFrame-0.1.0-win-x64.zip`: distribuição portátil; extraia todo o conteúdo antes de executar `SonarFrame.Desktop.exe`.
+- `sonarFrame-0.1.0-win-x64-setup.exe`: [instalador Windows por usuário](instalador.md), com atalhos e associação opcional de projetos.
 - `packages/`: pacotes Core, Application e Infrastructure.
-- `SHA256SUMS.txt`: checksums do ZIP e dos pacotes.
+- `SHA256SUMS.txt`: checksums do ZIP, do instalador e dos pacotes.
 - `CHANGELOG.md` e `release.md`: escopo da versão.
 
 O script não cria tags, commits, releases remotas nem publica pacotes. Para preparar a tag, confirme que o commit contém o código, os arquivos de lock e o changelog correspondentes. `-ExpectedTag` rejeita uma versão incompatível.

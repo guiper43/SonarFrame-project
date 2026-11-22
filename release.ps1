@@ -8,14 +8,17 @@ try {
     & ./build.ps1 -Pack
     $destino = Join-Path $PSScriptRoot ".tools/releases/$versao"
     & ./run-desktop.ps1 -Publish
+    & ./gerar-instalador.ps1 -SkipPublish
     $pacotes = Join-Path $destino 'packages'
     New-Item -ItemType Directory -Force $pacotes | Out-Null
     foreach ($nome in @('SonarFrame.Core', 'SonarFrame.Application', 'SonarFrame.Infrastructure')) {
         Copy-Item -LiteralPath ".tools/packages/$nome.$versao.nupkg" -Destination $pacotes
     }
-    Copy-Item -LiteralPath 'CHANGELOG.md', 'docs/release.md' -Destination $destino
+    Copy-Item -LiteralPath 'CHANGELOG.md', 'docs/release.md', 'docs/instalador.md' -Destination $destino
+    $instalador = Join-Path $destino "sonarFrame-$versao-win-x64-setup.exe"
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot ".tools/installers/$versao/sonarFrame-$versao-win-x64-setup.exe") -Destination $instalador
     Compress-Archive -Path (Join-Path $PSScriptRoot 'artifacts/desktop/*') -DestinationPath (Join-Path $destino "sonarFrame-$versao-win-x64.zip") -Force
-    $arquivos = @((Join-Path $destino "sonarFrame-$versao-win-x64.zip")) + @(Get-ChildItem -LiteralPath $pacotes -Filter '*.nupkg' | ForEach-Object FullName)
+    $arquivos = @((Join-Path $destino "sonarFrame-$versao-win-x64.zip"), $instalador) + @(Get-ChildItem -LiteralPath $pacotes -Filter '*.nupkg' | ForEach-Object FullName)
     $linhas = foreach ($arquivo in $arquivos) { $hash = Get-FileHash -LiteralPath $arquivo -Algorithm SHA256; "$($hash.Hash.ToLowerInvariant())  $([IO.Path]::GetRelativePath($destino, $arquivo))" }
     $linhas | Set-Content -LiteralPath (Join-Path $destino 'SHA256SUMS.txt') -Encoding utf8
     Write-Output "Artefatos preparados em $destino"
