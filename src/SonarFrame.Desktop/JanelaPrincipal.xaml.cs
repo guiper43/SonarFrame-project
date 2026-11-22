@@ -131,10 +131,21 @@ public partial class JanelaPrincipal : Window
         MenuExcluirSelecao.IsEnabled = p.Selecao is { } selecionado && selecionado.Fim > selecionado.Inicio;
         MenuDividir.IsEnabled = p.LinhaDoTempo.Length > 0;
         var conteudoSelecionado = new AcoesEdicao(sessao).Conteudos().SingleOrDefault(c => c.Id == p.ItemSelecionadoId);
-        BotaoVolume.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && p.Biblioteca.Single(a => a.Id == conteudoSelecionado.MidiaId).Tipo != TipoMidia.Imagem;
+        var tipoSelecionado = conteudoSelecionado is null ? (TipoMidia?)null : p.Biblioteca.Single(a => a.Id == conteudoSelecionado.MidiaId).Tipo;
+        BotaoVolume.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && tipoSelecionado != TipoMidia.Imagem;
+        BotaoPropriedadesVisuais.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null && tipoSelecionado != TipoMidia.Audio;
+        MenuPropriedadesVisuais.IsEnabled = conteudoSelecionado is not null && tipoSelecionado != TipoMidia.Audio;
+        var legendaAtiva = new AcoesEdicao(sessao).LegendaAtiva();
+        var pausadoComLegenda = previa.Atual.Estado != EstadoPrevia.Reproduzindo && legendaAtiva is not null;
+        BotaoFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado is not null;
+        BotaoRemoverFades.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.TemFades == true;
+        BotaoEditarLegenda.IsEnabled = !exibirPropriedadesBiblioteca && pausadoComLegenda;
         BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = !exibirPropriedadesBiblioteca && conteudoSelecionado?.EhCamada == true;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && p.Duracao > TempoMidia.Zero;
         BotaoRemoverMidia.IsEnabled = Biblioteca.SelectedItems.Count > 0;
+        MenuConfigurarFades.IsEnabled = conteudoSelecionado is not null;
+        MenuRemoverFades.IsEnabled = conteudoSelecionado?.TemFades == true;
+        MenuEditarLegenda.IsEnabled = pausadoComLegenda;
         MenuRemoverComposicao.IsEnabled = conteudoSelecionado is not null;
         MenuMoverAntes.IsEnabled = MenuMoverDepois.IsEnabled = MenuMoverInicio.IsEnabled = MenuMoverFim.IsEnabled = conteudoSelecionado?.EhCamada == false;
         AtualizarControlesPrevia();
@@ -143,6 +154,8 @@ public partial class JanelaPrincipal : Window
         AtualizarTimelineVisual();
         if (exibirPropriedadesBiblioteca && Biblioteca.SelectedItem is Linha linhaBiblioteca) DescreverMidia(linhaBiblioteca.Id);
         else if (conteudoSelecionado is not null) DescreverConteudo(conteudoSelecionado);
+        else if (!exibirPropriedadesBiblioteca && legendaAtiva is not null)
+            Propriedades.Text = $"Selecione um conteúdo na biblioteca ou na linha do tempo.\nLegenda ativa ({legendaAtiva.Inicio} até {legendaAtiva.Fim}): {legendaAtiva.Texto.Replace('\n', ' ')}";
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
     }
     private static string Tipo(TipoMidia tipo) => tipo switch { TipoMidia.Video => "Vídeo", TipoMidia.Audio => "Áudio", _ => "Imagem" };
@@ -207,15 +220,49 @@ public partial class JanelaPrincipal : Window
     }
     private async Task InserirNaPosicaoAsync(int? indice)
     {
-        if (sessao is null || Biblioteca.SelectedItems.Count == 0) return;
+        if (sessao is null || Biblioteca.SelectedItems.Count == 0 || editandoPropriedadesVisuais) return;
         var ids = Biblioteca.Items.Cast<Linha>().Where(r => Biblioteca.SelectedItems.Contains(r)).Select(r => r.Id).ToImmutableArray();
         TempoMidia? duracao = null;
-        if (sessao.Atual.Biblioteca.Any(a => ids.Contains(a.Id) && a.Tipo == TipoMidia.Imagem))
+        LayoutVisual? layoutImagem = null;
+        var midiaImagem = sessao.Atual.Biblioteca.FirstOrDefault(a => ids.Contains(a.Id) && a.Tipo == TipoMidia.Imagem);
+        var tinhaComposicaoVisivel = TinhaPreviaComposicaoVisivel;
+        var botaoOrigem = indice is not null ? BotaoInserirAntes : BotaoInserir;
+        editandoPropriedadesVisuais = true;
+        try
         {
-            duracao = SolicitarDuracaoImagem();
-            if (duracao is null) { BotaoInserir.Focus(); return; }
+            if (!await PrepararEdicaoAsync()) return;
+            if (midiaImagem is not null)
+            {
+                var permitirCamada = indice is null && ids.Length == 1 && sessao.Atual.Duracao > TempoMidia.Zero;
+                var resultado = SolicitarInsercaoImagem(midiaImagem, permitirCamada);
+                if (resultado is null)
+                {
+                    botaoOrigem.Focus();
+                    await RestaurarQuadroPausadoSeNecessarioAsync(tinhaComposicaoVisivel);
+                    return;
+                }
+                if (!resultado.InserirNaSequencia)
+                {
+                    var conflitos = new AcoesEdicao(sessao).ConflitosVisuais(resultado.Inicio, resultado.Duracao, resultado.Layout);
+                    if (await ExecutarAsync(new AdicionarCamada(midiaImagem.Id, resultado.Inicio, TempoMidia.Zero, resultado.Duracao, resultado.Layout)))
+                    {
+                        var aviso = conflitos.IsEmpty ? "" : $" Aviso: há sobreposição simultânea na mesma região com {string.Join(", ", conflitos)}.";
+                        Anunciar((resultado.Layout.Modo == ModoExibicaoVisual.Substituir
+                            ? "Imagem inserida substituindo o vídeo no intervalo e preservando o áudio original."
+                            : "Imagem sobreposta ao conteúdo visual no intervalo.") + aviso);
+                    }
+                    botaoOrigem.Focus();
+                    await RestaurarQuadroPausadoSeNecessarioAsync(tinhaComposicaoVisivel);
+                    return;
+                }
+                duracao = resultado.Duracao;
+                layoutImagem = resultado.Layout;
+            }
+            if (await ExecutarAsync(new InserirClipes(ids, duracao, indice, layoutImagem)))
+                Anunciar($"{ids.Length} conteúdo(s) adicionado(s) à linha do tempo.");
+            await RestaurarQuadroPausadoSeNecessarioAsync(tinhaComposicaoVisivel);
         }
-        if (await ExecutarAsync(new InserirClipes(ids, duracao, indice))) Anunciar($"{ids.Length} conteúdo(s) adicionado(s) à linha do tempo.");
+        finally { editandoPropriedadesVisuais = false; }
     }
     private void MidiaSelecionada(object sender, SelectionChangedEventArgs e)
     {
@@ -225,7 +272,7 @@ public partial class JanelaPrincipal : Window
         exibirPropriedadesBiblioteca = true;
         BotaoInserir.IsEnabled = Biblioteca.SelectedItems.Count > 0;
         BotaoAdicionarCamada.IsEnabled = Biblioteca.SelectedItems.Count == 1 && sessao.Atual.Duracao > TempoMidia.Zero;
-        BotaoVolume.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
+        BotaoVolume.IsEnabled = BotaoPropriedadesVisuais.IsEnabled = BotaoFades.IsEnabled = BotaoRemoverFades.IsEnabled = BotaoEditarLegenda.IsEnabled = BotaoEditarCamada.IsEnabled = BotaoRemoverCamada.IsEnabled = false;
         if (Biblioteca.SelectedItem is Linha linha)
             DescreverMidia(linha.Id);
         else Propriedades.Text = "Selecione um conteúdo na biblioteca ou na linha do tempo.";
@@ -380,11 +427,25 @@ public partial class JanelaPrincipal : Window
         dialogo.Loaded += (_, _) => corpo.Focus(); dialogo.ShowDialog();
         RestaurarFocoAposDialogo(foco);
     }
-    private void AdicionarMidia(object sender, RoutedEventArgs e)
+    private async void AdicionarMidia(object sender, RoutedEventArgs e)
     {
         if (sessao is null) return;
         var dialogo = new DialogoImportacao(this, sessao, leitorMetadados);
-        dialogo.ShowDialog(); Atualizar();
+        dialogo.ShowDialog();
+        if (dialogo.ImportouLegendas)
+        {
+            var tinhaComposicao = composicaoAtiva && !sessao.Atual.LinhaDoTempo.IsEmpty;
+            await InterromperComposicaoAsync(true);
+            if (tinhaComposicao && !sessao.Atual.LinhaDoTempo.IsEmpty)
+            {
+                composicaoAtiva = true;
+                destinoManualComposicao = sessao.Atual.Cursor;
+                UltimoQuadro = ExibirQuadroAsync(sessao.Atual.Cursor);
+                await UltimoQuadro;
+                AtualizarPosicaoPrevia();
+            }
+        }
+        Atualizar();
         if (Biblioteca.Items.Count > 0)
         {
             if (Biblioteca.SelectedIndex < 0) Biblioteca.SelectedIndex = Biblioteca.Items.Count - 1;
@@ -395,36 +456,10 @@ public partial class JanelaPrincipal : Window
         else BotaoAdicionar.Focus();
         foreach (var mensagem in sessao.Mensagens.Where(m => m.Codigo == "importacao.falhou"))
             if (!mensagensRecentes.Contains(mensagem.Mensagem)) mensagensRecentes.Insert(0, mensagem.Mensagem);
-        if (dialogo.ImportouAlgumaMidia) Anunciar("Mídias adicionadas à biblioteca. Cima/Baixo seleciona arquivos, Enter abre a prévia, Tab acessa as ações e Delete remove da biblioteca.");
+        if (dialogo.ImportouAlgumaMidia && dialogo.ImportouLegendas) Anunciar("Mídias adicionadas à biblioteca e legendas SRT aplicadas na linha do tempo.");
+        else if (dialogo.ImportouLegendas) Anunciar($"Legendas SRT importadas ({sessao.Atual.Legendas.Length} legenda(s) na linha do tempo). Pause sobre uma legenda ativa e pressione Shift+F10 para editar.");
+        else if (dialogo.ImportouAlgumaMidia) Anunciar("Mídias adicionadas à biblioteca. Cima/Baixo seleciona arquivos, Enter abre a prévia, Tab acessa as ações e Delete remove da biblioteca.");
         else Anunciar("Diálogo de importação fechado.");
-    }
-    private TempoMidia? SolicitarDuracaoImagem()
-    {
-        TempoMidia? resultado = null;
-        var painel = new StackPanel();
-        var entrada = new TextBox { Text = "5", Margin = new Thickness(0, 8, 0, 12) };
-        painel.Children.Add(new Label { Content = "_Duração de cada foto, em segundos", Target = entrada });
-        painel.Children.Add(entrada);
-        AutomationProperties.SetName(entrada, "Duração de cada foto em segundos");
-        var erro = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        AutomationProperties.SetLiveSetting(erro, AutomationLiveSetting.Assertive);
-        painel.Children.Add(erro);
-        var dialogo = CriarDialogo("Duração das fotos", painel);
-        var confirmar = new Button { Content = "Adicionar à composição", IsDefault = true };
-        confirmar.Click += (_, _) =>
-        {
-            if (decimal.TryParse(entrada.Text, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite, CultureInfo.CurrentCulture, out var valor) && valor >= 0.001m && valor <= 86400)
-            { resultado = new TempoMidia((long)decimal.Round(valor * 1000), 1000); dialogo.DialogResult = true; }
-            else
-            {
-                erro.Text = "Informe uma duração entre 0,001 e 86400 segundos.";
-                (UIElementAutomationPeer.FromElement(erro) ?? UIElementAutomationPeer.CreatePeerForElement(erro))?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
-                entrada.Focus(); entrada.SelectAll();
-            }
-        };
-        painel.Children.Add(confirmar); AdicionarFechar(dialogo, painel, "Cancelar");
-        dialogo.Loaded += (_, _) => { entrada.Focus(); entrada.SelectAll(); };
-        dialogo.ShowDialog(); return resultado;
     }
     private void InformacoesPrevia(object sender, RoutedEventArgs e) => Anunciar("Use Reproduzir ou Pausar na área do vídeo. Espaço na timeline reproduz a montagem. A prévia inclui camadas de áudio, vídeo e imagens. Consultar prévia informa a posição e as camadas ativas.");
     private void Sobre(object sender, RoutedEventArgs e)

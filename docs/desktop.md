@@ -27,7 +27,7 @@ O script prepara o FFprobe local quando necessário, verificando o checksum do d
 3. Acione **Selecionar arquivos**. O seletor nativo aceita múltiplos arquivos usando Ctrl/Shift.
 4. Acompanhe a contagem e consulte a lista de resultados. Escape ou **Cancelar importação** interrompe a leitura; os arquivos já importados permanecem na biblioteca. Depois, Escape fecha o diálogo.
 5. Ao concluir, o foco fica em **Fechar**. Ao fechar, retorna à lista de arquivos importados. Selecione um ou mais itens e acione **Adicionar à linha do tempo**.
-6. Fotos pedem duração em segundos antes da inserção (padrão de cinco segundos, editável). A duração aceita frações com o separador decimal configurado no Windows. Cancelar esse diálogo não modifica a composição.
+6. Ao inserir uma foto, o diálogo aproveita a seleção temporal ativa (quando houver) e permite escolher entre **substituir a imagem do vídeo durante o intervalo** (com **Permitir bordas** ou **Preencher por inteiro**), **sobrepor a imagem ao conteúdo visual existente** (nas nove posições da tela e com tamanhos **Pequeno (25%)**, **Médio (50%)**, **Grande (75%)** ou **Personalizado (5% a 100%, em passos de 5%)**) ou adicionar como novo clipe na sequência principal, preservando o áudio original por padrão. A duração aceita frações com o separador decimal configurado no Windows. Cancelar esse diálogo não modifica a composição.
 7. Use Ctrl+S para salvar a biblioteca e a composição. O aplicativo não modifica os arquivos originais.
 
 Formatos: MP4, MOV, JPG/JPEG, PNG, MP3, WAV, M4A e OGG/Opus. A leitura verifica fluxos, codecs reconhecidos e duração; arquivos inválidos são listados sem impedir os demais. Uma importação não insere nada automaticamente na composição. A inserção múltipla é uma única operação de desfazer/refazer, na ordem da biblioteca.
@@ -58,8 +58,11 @@ O arquivo `%LOCALAPPDATA%/sonarFrame/diagnostico-reproducao.json` registra a abe
 - **Dividir no cursor** separa o clipe principal que contém a posição temporal atual. O cursor precisa estar dentro do clipe, não em uma de suas extremidades.
 - **Excluir intervalo selecionado** remove a seleção temporal e fecha a lacuna. Camadas que cruzam o intervalo são recortadas, e as posteriores são deslocadas.
 - **Ajustar volume** nas propriedades altera o áudio do conteúdo selecionado entre 0 e 200%. Imagens não oferecem esse controle.
-- **Adicionar como camada** insere uma mídia da biblioteca em um intervalo independente. O diálogo permite definir início na composição, início na origem e duração. A camada precisa caber na composição e na mídia de origem.
-- **Editar intervalo da camada** e **Remover camada** atuam somente na camada selecionada e não encurtam a sequência principal.
+- **Adicionar como camada** insere uma mídia da biblioteca em um intervalo independente, preenchendo automaticamente início e duração a partir da seleção temporal ativa quando existente. Para mídias visuais, o diálogo também permite escolher entre sobrepor ao vídeo (nas nove posições e tamanhos 25%, 50%, 75% ou 5% a 100% em passos de 5%) e substituir a imagem no intervalo (**Permitir bordas** ou **Preencher por inteiro**), avisando de forma acessível quando houver sobreposição simultânea na mesma região sem bloquear a operação.
+- **Propriedades visuais**, **Editar intervalo da camada** e **Remover camada** permitem modificar posição, tamanho, ajuste de enquadramento e intervalo de elementos já inseridos por teclado, preservando os arquivos originais e a duração da sequência principal nas camadas.
+- **Configurar fades** e **Remover fades** (em Propriedades ou no menu contextual da timeline) configuram durações independentes de *fade-in* e *fade-out* de áudio e vídeo conforme o tipo da mídia, exigindo que a soma `fade-in + fade-out` não ultrapasse a duração do conteúdo.
+- **Editar legenda** (no menu contextual `Shift+F10` da timeline ou em Propriedades, quando pausado sobre uma legenda ativa) abre um diálogo único com texto, fonte, tamanho, cor, negrito, itálico, fundo, 9 posições visuais (inferior centro por padrão) e escopo de aplicação (apenas a legenda atual ou todas as legendas do projeto), preservando a pausa, a posição temporal e retornando o foco à timeline.
+- Quando houver legendas simultâneas, **Editar legenda** primeiro apresenta a lista **Legendas ativas nesta posição**. Use Cima/Baixo para escolher e Enter para abrir a edição; Escape cancela a escolha, preservando a posição e retornando o foco à região de origem.
 - Todas essas operações permitem desfazer/refazer. A lista identifica nome, tipo de mídia, ordem na lista, sequência principal ou camada, início, fim e duração. Mover para a posição atual não cria uma edição no histórico.
 
 Alt+3 leva diretamente à lista da timeline. Enter posiciona no início do item selecionado. Shift+F10, Aplicações ou botão direito abre o menu com Consultar posição e intervalo, Dividir no cursor, Excluir intervalo, Remover conteúdo, reordenação e histórico. Escape retorna à timeline. A consulta informa os limites e a duração da seleção com milissegundos. Selecionar um item com Cima/Baixo não desloca o cursor nem altera o intervalo temporal. Dividir atua no clipe principal sob o cursor, que pode ser diferente do item selecionado.
@@ -139,9 +142,9 @@ O arquivo é produzido na pasta escolhida e só substitui o destino após a veri
 
 ## Limites desta etapa
 
-- A guia **Legendas e efeitos** continua informativa. SRT e efeitos ainda não estão disponíveis.
-- Prévia da biblioteca, reprodução da composição com camadas e exportação em MP4 disponíveis; exportação em 4K permanece fora desta versão.
-- FFprobe lê metadados, FFmpeg prepara a prévia temporária da composição e exporta o arquivo MP4 final, e LibVLCSharp reproduz o arquivo original ou a prévia preparada. Não há edição visual de legendas, efeitos ou serviços de IA.
+- A guia **Legendas e efeitos** importa arquivos externos `.srt` (funcionando offline, sem chave de API) e pergunta se deseja substituir ou cancelar quando o projeto já possui legendas; geração de legendas por IA e transições visuais ainda não estão disponíveis.
+- Prévia da biblioteca, reprodução da composição com camadas, fades, legendas `.srt` e exportação em MP4 disponíveis; exportação em 4K permanece fora desta versão.
+- FFprobe lê metadados, FFmpeg prepara a prévia temporária da composição e exporta o arquivo MP4 final, e LibVLCSharp reproduz o arquivo original ou a prévia preparada. Não há serviços de IA nesta versão.
 - Na composição, Esquerda/Direita usa os timestamps reais dos vídeos, inclusive VFR e taxas acima de 30 fps. Imagens e áudios usam passos de 1/30 s; Ctrl+setas e Page Up/Down continuam disponíveis. A primeira consulta pode precisar ler o índice de quadros; use Cancelar preparação ou busca para interromper.
 - A validação real com NVDA continua pendente. Controles nativos, nomes UI Automation e notificações são a base, não uma certificação de acessibilidade.
 

@@ -14,9 +14,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
     private string ExecutavelFfmpeg => ffmpeg;
     private IExecutorFfprobe LeitorFfprobe => ffprobe;
 
-    private string CaminhoBloco(Projeto bloco, int largura, int altura, bool audio)
+    private string CaminhoBloco(BlocoRecortado bloco, int largura, int altura, bool audio)
     {
-        var identidade = JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 2, Largura = audio ? 0 : largura, Altura = audio ? 0 : altura, Conteudo = ChaveConteudo(bloco, audio) });
+        var identidade = JsonSerializer.SerializeToUtf8Bytes(new { Perfil = 2, Largura = audio ? 0 : largura, Altura = audio ? 0 : altura, Conteudo = ChaveConteudo(bloco.Projeto, audio, bloco.Cortes) });
         return Path.Combine(pasta, "bloco-" + (audio ? "audio-" : "video-") + Convert.ToHexString(SHA256.HashData(identidade)) + ".nut");
     }
 
@@ -62,8 +62,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
     }
 
-    private sealed record BlocoProgressivo(Projeto Projeto, TempoMidia Fim, string Video, string Audio)
+    private sealed record BlocoProgressivo(BlocoRecortado Bloco, TempoMidia Fim, string Video, string Audio)
     {
+        public Projeto Projeto => Bloco.Projeto;
         public TaskCompletionSource Pronto { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
@@ -161,7 +162,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
                         dono.LiberarBlocos(protegidos, LimiteBytes / 2 - 32 * 1024 * 1024);
                         var disponivel = LimiteBytes / 2 - dono.TamanhoBlocos();
                         if (disponivel < 2 * 1024 * 1024) throw new IOException("O cache atingiu o limite de 2 GB. Reduza a composição para reproduzir.");
-                        await dono.RenderizarBlocoAsync(bloco.Projeto, metadados, dimensoes.Largura, dimensoes.Altura, temporario, disponivel, audio, token).ConfigureAwait(false);
+                        await dono.RenderizarBlocoAsync(bloco.Projeto, metadados, dimensoes.Largura, dimensoes.Altura, temporario, disponivel, audio, token, cortes: bloco.Bloco.Cortes).ConfigureAwait(false);
                         if (Chave(projeto) != chave) throw new IOException("Uma mídia mudou durante a preparação. Reproduza novamente para atualizar.");
                         File.Move(temporario, caminho);
                     }
