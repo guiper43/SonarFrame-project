@@ -4,9 +4,10 @@ using SonarFrame.Core;
 namespace SonarFrame.Application;
 
 public sealed record ItemComposicao(Guid Id, string Nome, Guid MidiaId, TempoMidia Inicio, TempoMidia Duracao, int Volume, bool EhCamada,
-    TempoMidia FadeInAudio = default, TempoMidia FadeOutAudio = default, TempoMidia FadeInVideo = default, TempoMidia FadeOutVideo = default)
+    TempoMidia FadeInAudio = default, TempoMidia FadeOutAudio = default, TempoMidia FadeInVideo = default, TempoMidia FadeOutVideo = default, LayoutVisual? Layout = null)
 {
     public bool TemFades => FadeInAudio > TempoMidia.Zero || FadeOutAudio > TempoMidia.Zero || FadeInVideo > TempoMidia.Zero || FadeOutVideo > TempoMidia.Zero;
+    public LayoutVisual LayoutEfetivo => Layout ?? (EhCamada ? LayoutVisual.PadraoCamada : LayoutVisual.PadraoSequencia);
 }
 
 public sealed class AcoesEdicao(SessaoEdicao sessao)
@@ -19,12 +20,34 @@ public sealed class AcoesEdicao(SessaoEdicao sessao)
         foreach (var clipe in projeto.LinhaDoTempo)
         {
             resultado.Add(new(clipe.Id, clipe.Nome, clipe.MidiaId, posicao, clipe.Duracao, clipe.Volume, false,
-                clipe.FadeInAudio, clipe.FadeOutAudio, clipe.FadeInVideo, clipe.FadeOutVideo));
+                clipe.FadeInAudio, clipe.FadeOutAudio, clipe.FadeInVideo, clipe.FadeOutVideo, clipe.Layout));
             posicao += clipe.Duracao;
         }
         resultado.AddRange(projeto.Camadas.Select(l => new ItemComposicao(l.Clipe.Id, l.Clipe.Nome, l.Clipe.MidiaId, l.Inicio, l.Clipe.Duracao, l.Clipe.Volume, true,
-            l.Clipe.FadeInAudio, l.Clipe.FadeOutAudio, l.Clipe.FadeInVideo, l.Clipe.FadeOutVideo)));
+            l.Clipe.FadeInAudio, l.Clipe.FadeOutAudio, l.Clipe.FadeInVideo, l.Clipe.FadeOutVideo, l.Clipe.Layout)));
         return resultado.OrderBy(c => c.Inicio).ThenBy(c => c.EhCamada).ToArray();
+    }
+    public ImmutableArray<string> ConflitosVisuais(TempoMidia inicio, TempoMidia duracao, LayoutVisual layout, Guid? ignorarClipeId = null)
+    {
+        var projeto = sessao.Atual;
+        var fim = inicio + duracao;
+        var nomes = ImmutableArray.CreateBuilder<string>();
+        foreach (var camada in projeto.Camadas)
+        {
+            if (camada.Clipe.Id == ignorarClipeId) continue;
+            var midia = projeto.Biblioteca.Single(a => a.Id == camada.Clipe.MidiaId);
+            if (midia.Tipo == TipoMidia.Audio) continue;
+            var inicioCamada = camada.Inicio;
+            var fimCamada = camada.Inicio + camada.Clipe.Duracao;
+            if (inicio >= fimCamada || inicioCamada >= fim) continue;
+            var outroLayout = camada.Clipe.ObterLayout(ehCamada: true);
+            var mesmaRegiao = layout.Modo == ModoExibicaoVisual.Substituir
+                || outroLayout.Modo == ModoExibicaoVisual.Substituir
+                || layout.Posicao == outroLayout.Posicao;
+            if (mesmaRegiao && !nomes.Contains(camada.Clipe.Nome))
+                nomes.Add(camada.Clipe.Nome);
+        }
+        return nomes.ToImmutable();
     }
     public void DividirNoCursor()
     {

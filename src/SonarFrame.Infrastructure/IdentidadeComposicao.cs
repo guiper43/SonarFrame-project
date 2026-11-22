@@ -29,12 +29,13 @@ public sealed partial class PreparadorComposicaoFfmpeg
     private static Projeto SemAudioNaSequencia(Projeto projeto, bool preservarFades = false)
         => Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100, FadeInAudio = TempoMidia.Zero, FadeOutAudio = TempoMidia.Zero })] }, preservarFades);
 
-    private static Projeto Normalizar(Projeto projeto, bool preservarFades = false)
+    private static Projeto Normalizar(Projeto projeto, bool preservarFades = false, bool preservarLayoutNulo = false)
     {
         var clipes = ImmutableArray.CreateBuilder<Clipe>();
         foreach (var clipe in projeto.LinhaDoTempo)
         {
             if (clipes.Count > 0 && clipes[^1] is { } anterior && PodeUnir(anterior, clipe)
+                && (preservarLayoutNulo ? anterior.Layout == clipe.Layout : anterior.ObterLayout(false) == clipe.ObterLayout(false))
                 && (!preservarFades || !TemFades(anterior) && !TemFades(clipe)))
                 clipes[^1] = anterior with
                 {
@@ -49,8 +50,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
 
     private static string ChaveConteudo(Projeto projeto, bool? audio = null, IReadOnlyDictionary<Guid, CorteFade>? cortes = null)
     {
+        if (audio == true) projeto = projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Layout = null })] };
         if (audio == false) projeto = SemAudioNaSequencia(projeto, preservarFades: cortes is not null);
-        object Conteudo(Clipe clipe)
+        object Conteudo(Clipe clipe, bool ehCamada)
         {
             var midia = projeto.Biblioteca.Single(m => m.Id == clipe.MidiaId);
             if (audio == false && midia.Tipo == TipoMidia.Audio || audio == true && midia.Tipo == TipoMidia.Imagem)
@@ -62,6 +64,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
                 arquivo,
                 Origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem,
                 clipe.Duracao,
+                Layout = audio == true ? null : clipe.ObterLayout(ehCamada),
                 Volume = audio == false ? 100 : clipe.Volume,
                 FadeInAudio = audio == false ? TempoMidia.Zero : corte?.FadeInAudio ?? clipe.FadeInAudio,
                 AtrasoInAudio = audio == false ? TempoMidia.Zero : corte?.AtrasoInAudio ?? TempoMidia.Zero,
@@ -75,9 +78,9 @@ public sealed partial class PreparadorComposicaoFfmpeg
         }
         return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            Perfil = 7, Audio = audio, Sequencia = Normalizar(projeto, preservarFades: cortes is not null).LinhaDoTempo.Select(Conteudo),
+            Perfil = 8, Audio = audio, Sequencia = Normalizar(projeto, preservarFades: cortes is not null).LinhaDoTempo.Select(c => Conteudo(c, false)),
             Camadas = projeto.Camadas.Where(c => audio is null || projeto.Biblioteca.Single(m => m.Id == c.Clipe.MidiaId).Tipo != (audio.Value ? TipoMidia.Imagem : TipoMidia.Audio))
-                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe) }),
+                .Select(c => new { c.Inicio, Clipe = Conteudo(c.Clipe, true) }),
             Legendas = audio == true ? [] : projeto.Legendas
                 .Where(l => l.Inicio < projeto.Duracao && l.Fim > TempoMidia.Zero)
                 .Select(l => new

@@ -64,7 +64,7 @@ public sealed partial class PreparadorComposicaoFfmpeg
             fator = Math.Clamp(fator, 0m, 1m);
             return fator < 1m ? $",colorchannelmixer=aa={fator.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)}" : "";
         }
-        async Task AdicionarAsync(Clipe clipe, TempoMidia inicio)
+        async Task AdicionarAsync(Clipe clipe, TempoMidia inicio, bool ehCamada)
         {
             var midia = projeto.Biblioteca.Single(m => m.Id == clipe.MidiaId);
             var dados = metadados[midia.Id];
@@ -77,18 +77,20 @@ public sealed partial class PreparadorComposicaoFfmpeg
                 argumentos.AddRange(["-ss", Segundos(IndiceQuadros.BuscaParaQuadro(tempos, indice))]);
             }
             argumentos.AddRange(["-i", Path.GetFullPath(midia.Caminho)]);
-            filtros.Append($"[{entrada}:{dados.IndiceVideo}]trim=end_frame=1,setpts=0,{Escala(largura, altura, true)}{OpacidadeFade(clipe, instante, inicio)}[q{entrada}];");
-            filtros.Append($"[{visual}][q{entrada}]overlay=shortest=1:format=auto[s{entrada}];");
+            var filtroEscala = FiltroEscalaVisual(clipe, largura, altura, ehCamada, false);
+            var coordenadas = CoordenadasOverlayClipe(clipe, ehCamada);
+            filtros.Append($"[{entrada}:{dados.IndiceVideo}]trim=end_frame=1,setpts=0,{filtroEscala},format=rgba{OpacidadeFade(clipe, instante, inicio)}[q{entrada}];");
+            filtros.Append($"[{visual}][q{entrada}]overlay={coordenadas}:shortest=1:format=auto[s{entrada}];");
             visual = $"s{entrada++}";
         }
         var inicio = TempoMidia.Zero;
         foreach (var clipe in projeto.LinhaDoTempo)
         {
-            if (instante < inicio + clipe.Duracao) { await AdicionarAsync(clipe, inicio).ConfigureAwait(false); break; }
+            if (instante < inicio + clipe.Duracao) { await AdicionarAsync(clipe, inicio, false).ConfigureAwait(false); break; }
             inicio += clipe.Duracao;
         }
         foreach (var camada in projeto.Camadas.Where(c => c.Inicio <= instante && instante < c.Inicio + c.Clipe.Duracao))
-            await AdicionarAsync(camada.Clipe, camada.Inicio).ConfigureAwait(false);
+            await AdicionarAsync(camada.Clipe, camada.Inicio, true).ConfigureAwait(false);
         string? arquivoAss = null;
         var legendasAtivas = projeto.Legendas.Where(l => l.Inicio <= instante && instante < l.Fim)
             .Select(l => l with { Inicio = TempoMidia.Zero, Fim = TempoMidia.Segundos(10) }).ToArray();

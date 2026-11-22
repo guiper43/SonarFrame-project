@@ -100,7 +100,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             var filtro = $"[{i}:a:0]atrim=start={Segundos(clipe.InicioNaOrigem - buscas[i])}:duration={Segundos(clipe.Duracao)},asetpts=PTS-{Segundos(clipe.InicioNaOrigem - buscas[i])}/TB,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={(clipe.Volume / 100m).ToString(CultureInfo.InvariantCulture)},apad,atrim=duration={Segundos(clipe.Duracao)}";
             return filtro + FiltroFade("afade", "asetpts", clipe.Duracao, fadeIn, atrasoIn, fadeOut, restanteOut);
         }
-        async Task<string> VideoAsync(Clipe clipe, Midia midia, int entrada, TempoMidia inicio, bool transparente)
+        async Task<string> VideoAsync(Clipe clipe, Midia midia, int entrada, TempoMidia inicio, bool ehCamada)
         {
             var origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem;
             var primeiro = origem;
@@ -112,13 +112,14 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             origem -= buscas[entrada];
             primeiro -= buscas[entrada];
             var duracao = Segundos(clipe.Duracao);
+            var filtroEscala = FiltroEscalaVisual(clipe, larguraQuadro, alturaQuadro, ehCamada, perfil.Preencher);
             var corte = cortes is not null && cortes.TryGetValue(clipe.Id, out var c) ? c : null;
             var fadeIn = corte?.FadeInVideo ?? clipe.FadeInVideo;
             var atrasoIn = corte?.AtrasoInVideo ?? TempoMidia.Zero;
             var fadeOut = corte?.FadeOutVideo ?? clipe.FadeOutVideo;
             var restanteOut = corte?.RestanteOutVideo ?? TempoMidia.Zero;
-            var fades = FiltroFade("fade", "setpts", clipe.Duracao, fadeIn, atrasoIn, fadeOut, restanteOut, transparente ? ":alpha=1" : "");
-            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{(perfil.Preencher && !transparente ? Preenchimento(larguraQuadro, alturaQuadro) : Escala(larguraQuadro, alturaQuadro, transparente))},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao}{fades},setpts=PTS+{Segundos(inicio)}/TB";
+            var fades = FiltroFade("fade", "setpts", clipe.Duracao, fadeIn, atrasoIn, fadeOut, restanteOut, ehCamada ? ":alpha=1" : "");
+            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{filtroEscala}{(ehCamada && (fadeIn > TempoMidia.Zero || fadeOut > TempoMidia.Zero) ? ",format=rgba" : "")},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao}{fades},setpts=PTS+{Segundos(inicio)}/TB";
         }
         filtrosVideo.Append($"color=c=black:s={larguraQuadro}x{alturaQuadro}:r=30:d={Segundos(projeto.Duracao)},setsar=1[vbase];");
         var visualAtual = "vbase";
@@ -133,7 +134,7 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             if (dados.Video && !somenteAudio)
             {
                 filtrosVideo.Append(await VideoAsync(clipe, midia, i, inicioClipe, false) + $"[v{i}];");
-                filtrosVideo.Append($"[{visualAtual}][v{i}]overlay=eof_action=pass:repeatlast=0:enable='gte(t,{Segundos(inicioClipe)})*lt(t,{Segundos(inicioClipe + clipe.Duracao)})'[principal{i}];");
+                filtrosVideo.Append($"[{visualAtual}][v{i}]overlay=x=0:y=0:eof_action=pass:repeatlast=0:enable='gte(t,{Segundos(inicioClipe)})*lt(t,{Segundos(inicioClipe + clipe.Duracao)})'[principal{i}];");
                 visualAtual = $"principal{i}";
             }
             filtrosAudio.Append(dados.Audio && midia.Tipo != TipoMidia.Imagem
@@ -154,8 +155,9 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             await EntradaAsync(midia, clipe, entrada);
             if (dados.Video && !somenteAudio)
             {
+                var coordenadas = CoordenadasOverlayClipe(clipe, true);
                 filtrosVideo.Append(await VideoAsync(clipe, midia, entrada, camada.Inicio, true) + $"[cv{camadaIndice}];");
-                filtrosVideo.Append($"[{visualAtual}][cv{camadaIndice}]overlay=eof_action=pass:repeatlast=0:format=auto:enable='gte(t,{Segundos(camada.Inicio)})*lt(t,{Segundos(camada.Inicio + clipe.Duracao)})'[sobre{camadaIndice}];");
+                filtrosVideo.Append($"[{visualAtual}][cv{camadaIndice}]overlay={coordenadas}:eof_action=pass:repeatlast=0:format=auto:enable='gte(t,{Segundos(camada.Inicio)})*lt(t,{Segundos(camada.Inicio + clipe.Duracao)})'[sobre{camadaIndice}];");
                 visualAtual = $"sobre{camadaIndice}";
             }
             if (dados.Audio && midia.Tipo != TipoMidia.Imagem)
@@ -264,6 +266,48 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
     private static string Escala(int larguraQuadro, int alturaQuadro, bool transparente) => $"scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,scale={larguraQuadro}:{alturaQuadro}:force_original_aspect_ratio=decrease:force_divisible_by=2,format={(transparente ? "rgba" : "yuv420p")},pad={larguraQuadro}:{alturaQuadro}:(ow-iw)/2:(oh-ih)/2:color={(transparente ? "black@0" : "black")}";
 
     private static string Preenchimento(int larguraQuadro, int alturaQuadro) => $"scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,scale={larguraQuadro}:{alturaQuadro}:force_original_aspect_ratio=increase,crop={larguraQuadro}:{alturaQuadro},setsar=1,format=yuv420p";
+
+    private static string EscalaSobreposta(int larguraQuadro, int alturaQuadro, int escalaPercentual)
+    {
+        var larguraLimite = Math.Max(2, (int)Math.Round(larguraQuadro * escalaPercentual / 100.0 / 2) * 2);
+        var alturaLimite = Math.Max(2, (int)Math.Round(alturaQuadro * escalaPercentual / 100.0 / 2) * 2);
+        return $"scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,scale={larguraLimite}:{alturaLimite}:force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba";
+    }
+
+    private static string CoordenadasOverlay(PosicaoVisual posicao) => posicao switch
+    {
+        PosicaoVisual.SuperiorEsquerda => "x=0:y=0",
+        PosicaoVisual.SuperiorCentro => "x=(W-w)/2:y=0",
+        PosicaoVisual.SuperiorDireita => "x=W-w:y=0",
+        PosicaoVisual.CentroEsquerda => "x=0:y=(H-h)/2",
+        PosicaoVisual.Centro => "x=(W-w)/2:y=(H-h)/2",
+        PosicaoVisual.CentroDireita => "x=W-w:y=(H-h)/2",
+        PosicaoVisual.InferiorEsquerda => "x=0:y=H-h",
+        PosicaoVisual.InferiorCentro => "x=(W-w)/2:y=H-h",
+        PosicaoVisual.InferiorDireita => "x=W-w:y=H-h",
+        _ => "x=(W-w)/2:y=(H-h)/2"
+    };
+
+    private static string FiltroEscalaVisual(Clipe clipe, int larguraQuadro, int alturaQuadro, bool ehCamada, bool preencherPadrao)
+    {
+        var layout = clipe.ObterLayout(ehCamada);
+        if (ehCamada && layout.Modo == ModoExibicaoVisual.Sobrepor)
+            return EscalaSobreposta(larguraQuadro, alturaQuadro, layout.EscalaPercentual);
+        var preencher = clipe.Layout is not null
+            ? layout.Ajuste == AjusteVisual.PreencherInteiro
+            : preencherPadrao;
+        return preencher
+            ? Preenchimento(larguraQuadro, alturaQuadro)
+            : Escala(larguraQuadro, alturaQuadro, false);
+    }
+
+    private static string CoordenadasOverlayClipe(Clipe clipe, bool ehCamada)
+    {
+        var layout = clipe.ObterLayout(ehCamada);
+        return ehCamada && layout.Modo == ModoExibicaoVisual.Sobrepor
+            ? CoordenadasOverlay(layout.Posicao)
+            : "x=0:y=0";
+    }
 
     private static string Segundos(TempoMidia tempo) => ((decimal)tempo.Numerador / tempo.Denominador).ToString("0.#########", CultureInfo.InvariantCulture);
 
