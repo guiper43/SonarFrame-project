@@ -43,10 +43,11 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
     }, token);
 
     private async Task RenderizarBlocoAsync(Projeto projeto, Dictionary<Guid, Metadados> metadados,
-        int larguraQuadro, int alturaQuadro, string destino, long disponivel, bool somenteAudio, CancellationToken token, PerfilVideo? perfil = null, Action<TempoMidia>? progresso = null)
+        int larguraQuadro, int alturaQuadro, string destino, long disponivel, bool somenteAudio, CancellationToken token,
+        PerfilVideo? perfil = null, Action<TempoMidia>? progresso = null, IReadOnlyDictionary<Guid, CorteFade>? cortes = null)
     {
         perfil ??= PerfilVideo.Previa;
-        if (!somenteAudio && !perfil.Exportacao) projeto = Normalizar(projeto with { LinhaDoTempo = [.. projeto.LinhaDoTempo.Select(c => c with { Volume = 100 })] });
+        if (!somenteAudio && !perfil.Exportacao) projeto = SemAudioNaSequencia(projeto, preservarFades: cortes is not null);
         var fontes = Fontes(projeto);
         var argumentos = new List<string> { "-hide_banner", "-v", "error", "-nostdin", "-y" };
         var filtrosVideo = new StringBuilder();
@@ -67,7 +68,38 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             if (busca > TempoMidia.Zero) argumentos.AddRange(["-ss", Segundos(busca)]);
             argumentos.AddRange(["-i", Path.GetFullPath(midia.Caminho)]);
         }
-        string Audio(Clipe clipe, int i) => $"[{i}:a:0]atrim=start={Segundos(clipe.InicioNaOrigem - buscas[i])}:duration={Segundos(clipe.Duracao)},asetpts=PTS-{Segundos(clipe.InicioNaOrigem - buscas[i])}/TB,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={(clipe.Volume / 100m).ToString(CultureInfo.InvariantCulture)},apad,atrim=duration={Segundos(clipe.Duracao)}";
+        static string FiltroFade(string nomeFiltro, string nomePts, TempoMidia duracao, TempoMidia fadeIn, TempoMidia atrasoIn, TempoMidia fadeOut, TempoMidia restanteOut, string sufixo = "")
+        {
+            var resultado = "";
+            if (fadeIn > TempoMidia.Zero)
+            {
+                resultado += atrasoIn > TempoMidia.Zero
+                    ? $",{nomePts}=PTS+{Segundos(atrasoIn)}/TB,{nomeFiltro}=t=in:st=0:d={Segundos(fadeIn)}{sufixo},{nomePts}=PTS-{Segundos(atrasoIn)}/TB"
+                    : $",{nomeFiltro}=t=in:st=0:d={Segundos(fadeIn)}{sufixo}";
+            }
+            if (fadeOut > TempoMidia.Zero)
+            {
+                var fimTotal = duracao + restanteOut;
+                if (fimTotal >= fadeOut)
+                    resultado += $",{nomeFiltro}=t=out:st={Segundos(fimTotal - fadeOut)}:d={Segundos(fadeOut)}{sufixo}";
+                else
+                {
+                    var atrasoOut = fadeOut - fimTotal;
+                    resultado += $",{nomePts}=PTS+{Segundos(atrasoOut)}/TB,{nomeFiltro}=t=out:st=0:d={Segundos(fadeOut)}{sufixo},{nomePts}=PTS-{Segundos(atrasoOut)}/TB";
+                }
+            }
+            return resultado;
+        }
+        string Audio(Clipe clipe, int i)
+        {
+            var corte = cortes is not null && cortes.TryGetValue(clipe.Id, out var c) ? c : null;
+            var fadeIn = corte?.FadeInAudio ?? clipe.FadeInAudio;
+            var atrasoIn = corte?.AtrasoInAudio ?? TempoMidia.Zero;
+            var fadeOut = corte?.FadeOutAudio ?? clipe.FadeOutAudio;
+            var restanteOut = corte?.RestanteOutAudio ?? TempoMidia.Zero;
+            var filtro = $"[{i}:a:0]atrim=start={Segundos(clipe.InicioNaOrigem - buscas[i])}:duration={Segundos(clipe.Duracao)},asetpts=PTS-{Segundos(clipe.InicioNaOrigem - buscas[i])}/TB,aresample=48000:async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume={(clipe.Volume / 100m).ToString(CultureInfo.InvariantCulture)},apad,atrim=duration={Segundos(clipe.Duracao)}";
+            return filtro + FiltroFade("afade", "asetpts", clipe.Duracao, fadeIn, atrasoIn, fadeOut, restanteOut);
+        }
         async Task<string> VideoAsync(Clipe clipe, Midia midia, int entrada, TempoMidia inicio, bool transparente)
         {
             var origem = midia.Tipo == TipoMidia.Imagem ? TempoMidia.Zero : clipe.InicioNaOrigem;
@@ -80,7 +112,13 @@ public sealed partial class PreparadorComposicaoFfmpeg(string ffmpeg, IExecutorF
             origem -= buscas[entrada];
             primeiro -= buscas[entrada];
             var duracao = Segundos(clipe.Duracao);
-            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{(perfil.Preencher && !transparente ? Preenchimento(larguraQuadro, alturaQuadro) : Escala(larguraQuadro, alturaQuadro, transparente))},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao},setpts=PTS+{Segundos(inicio)}/TB";
+            var corte = cortes is not null && cortes.TryGetValue(clipe.Id, out var c) ? c : null;
+            var fadeIn = corte?.FadeInVideo ?? clipe.FadeInVideo;
+            var atrasoIn = corte?.AtrasoInVideo ?? TempoMidia.Zero;
+            var fadeOut = corte?.FadeOutVideo ?? clipe.FadeOutVideo;
+            var restanteOut = corte?.RestanteOutVideo ?? TempoMidia.Zero;
+            var fades = FiltroFade("fade", "setpts", clipe.Duracao, fadeIn, atrasoIn, fadeOut, restanteOut, transparente ? ":alpha=1" : "");
+            return $"[{entrada}:{metadados[midia.Id].IndiceVideo}]trim=start={Segundos(primeiro)}:end={Segundos(origem + clipe.Duracao)},setpts=PTS-{Segundos(origem)}/TB,{(perfil.Preencher && !transparente ? Preenchimento(larguraQuadro, alturaQuadro) : Escala(larguraQuadro, alturaQuadro, transparente))},fps=30:start_time=0:round=up,tpad=stop_mode=clone:stop_duration={duracao},trim=duration={duracao}{fades},setpts=PTS+{Segundos(inicio)}/TB";
         }
         filtrosVideo.Append($"color=c=black:s={larguraQuadro}x{alturaQuadro}:r=30:d={Segundos(projeto.Duracao)},setsar=1[vbase];");
         var visualAtual = "vbase";
