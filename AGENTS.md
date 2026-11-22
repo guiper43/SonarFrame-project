@@ -80,6 +80,14 @@ SonarFrame.Desktop        interface WPF e adaptação LibVLCSharp (FabricaPrevia
 - **Descarte de recursos**: o `AsyncServiceScope` da janela e o `IHost` encerram deterministicamente os serviços `IDisposable`/`IAsyncDisposable` ao fechar a aplicação (`docs/adr/0001-injecao-de-dependencias.md`).
 - **Testes e contratos**: preservar os contratos públicos existentes; qualquer alteração em `RegistroDependencias` exige cobertura em `tests/SonarFrame.Desktop.Tests/TestesInjecaoDependencias.cs`.
 
+# Experiência visual e modalidades de acesso
+
+- Decisão de produto de 16/11/2026: atender também pessoas que utilizam visão e mouse, incluindo baixa visão, mantendo operação integral por teclado e NVDA como requisitos obrigatórios.
+- Usar um único projeto, estado e histórico para apresentações gráfica e estruturada. Gestos visuais reutilizam comandos existentes e possuem alternativas por teclado; Escape cancela gestos não confirmados.
+- A timeline gráfica é uma apresentação complementar autorizada, na região existente, preservando a lista acessível, os menus e os atalhos. Componentes gráficos devem oferecer equivalência acessível e respeitar o tema Windows, alto contraste e foco visível.
+- Concentrar a integração visual em componentes e arquivos próprios; evitar reestruturar arquivos compartilhados com fades, legendas, propriedades visuais e instalador. Não alterar persistência ou domínio para armazenar coordenadas da interface.
+- Consultar a decisão completa em `docs/adr/0002-edicao-visual-e-acessibilidade.md` e os requisitos RNF01.22–25 da ERS. Miniaturas e ondas de áudio ficam fora da primeira entrega acordada.
+
 # Decisões de interação estabelecidas
 
 - Timeline unificada: Alt+3 foca a lista. Cima/Baixo navega entre itens; Esquerda/Direita e modificadores navegam no tempo. Delete após seleção temporal exclui o intervalo; após navegação entre itens abre a ação de remover da composição, sem remover imediatamente. Shift+F10, Aplicações e botão direito abrem o menu de edição; Escape retorna à timeline. Divisão, exclusão, reordenação e histórico ficam nesse menu, com os atalhos diretos preservados.

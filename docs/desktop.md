@@ -190,3 +190,16 @@ As listas têm ações visíveis **Remover da biblioteca** e **Remover elemento 
 Há um único botão **Reproduzir/Pausar** na área do vídeo. Ele controla a mídia aberta ou a montagem quando não há mídia da biblioteca aberta. Espaço na timeline continua ativando a montagem. O nome acessível acompanha apenas a ação, e os anúncios são Reproduzindo ou Pausado. O botão permanece acessível durante a preparação, que não devolve o foco automaticamente se o usuário navegou para outro controle.
 
 No topo do projeto aberto, **Voltar para a tela inicial** fecha o projeto usando o fluxo de proteção das alterações não salvas e interrompe a prévia. Ao retornar, o foco fica em Novo projeto.
+
+## Timeline gráfica complementar
+
+Nesta branch, a região 3 também apresenta a composição proporcional ao tempo, com régua, cursor e camadas em linhas separadas. A lista acessível permanece abaixo da superfície gráfica.
+
+- Clique na régua ou em um conteúdo para posicionar a prévia pausada. Clicar em um conteúdo também o seleciona na lista.
+- Arraste na régua para selecionar um intervalo; o sentido do arraste define a âncora e a extremidade ativa. Shift+clique estende a seleção existente.
+- Arraste um clipe da sequência principal para reordenar. O destino é informado durante o gesto. A alteração só ocorre ao soltar o mouse, com uma única entrada no histórico; Ctrl+Z e Ctrl+Y desfazem e refazem.
+- Escape, perda de captura do mouse ou saída da janela cancelam o gesto. Camadas continuam sendo reposicionadas por Editar intervalo da camada.
+- Ampliar timeline, Reduzir timeline e Ajustar timeline à janela controlam o zoom entre 100% e 1600%. Use as barras de rolagem para acessar o conteúdo ampliado e as camadas.
+- O cursor possui um marcador, a seleção temporal tem contorno tracejado e o item selecionado tem contorno espesso e marca textual. As cores seguem o tema Windows.
+
+Alt+3 continua focando a lista; setas, seleção temporal, menu de contexto e atalhos existentes permanecem disponíveis. Os controles de zoom entram no percurso de Tab da mesma região. Miniaturas, ondas de áudio e alças de corte não integram esta entrega.

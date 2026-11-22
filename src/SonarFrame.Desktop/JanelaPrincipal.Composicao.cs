@@ -194,6 +194,7 @@ public partial class JanelaPrincipal
             : TempoMidia.Minimo(inicioArquivoComposicao + previa.Posicao, sessao.Atual.Duracao);
         if (fimReproducaoSelecao is { } fim) posicao = TempoMidia.Minimo(posicao, fim);
         sessao.Posicionar(posicao, reproducao: true);
+        AtualizarTimelineVisual();
         NavegadorTemporal.Text = $"Posição: {posicao} · Duração: {sessao.Atual.Duracao}";
         if (previa.Atual.Estado != EstadoPrevia.Reproduzindo)
             System.Windows.Automation.AutomationProperties.SetName(NavegadorTemporal, $"Posição {TempoFalado(posicao)}");
